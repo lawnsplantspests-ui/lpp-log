@@ -262,10 +262,7 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans)}
     <button class="btn-primary" onclick="addSvc()" style="margin-top:4px">Save New Service</button>
   </div>
   <div class="search-bar"><span style="color:var(--mut)">🔍</span><input type="text" id="prodQ" placeholder="Search services…" oninput="renderProds()"></div>
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-    <div class="cust-meta" id="prodMeta" style="margin-bottom:0"></div>
-    <button class="btn-sm" onclick="testSaveServices()" style="color:var(--grn);border-color:var(--gdim)">Test Save</button>
-  </div>
+  <div class="cust-meta" id="prodMeta"></div>
   <div id="prodList"></div>
 </div></div>
 <!-- EDIT MODAL -->
@@ -717,35 +714,5 @@ function saveEditSvc(){var newName=document.getElementById('epName').value.trim(
 function deleteSvc(pid){var key=decodeURIComponent(atob(pid));if(!confirm('Delete "'+key+'"? Cannot be undone.'))return;delete SV[key];saveSV();buildDD();renderProds();toast('Service deleted');}
 function esc(s){return(s||'').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 function goTab(t){document.querySelectorAll('.tab').forEach(function(x){x.classList.remove('on');});document.querySelectorAll('.pg').forEach(function(x){x.classList.remove('on');});document.getElementById('tab-'+t).classList.add('on');document.getElementById('pg-'+t).classList.add('on');}
-function toast(msg){var t=document.getElementById('toast');t.textContent=msg;t.className='toast show';setTimeout(function(){t.className='toast';},8000);}
-function testSaveServices(){
-  setSUI('go','testing…');
-  toast('Sending to Sheets…');
-  fetch(API_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'text/plain' },
-    body: JSON.stringify({ action: 'saveServices', services: JSON.stringify(SV) })
-  })
-  .then(function(r){ return r.text(); })
-  .then(function(t){
-    console.log('Full response:', t);
-    try {
-      var d = JSON.parse(t);
-      if(d.status === 'ok'){
-        setSUI('ok','synced ✓');
-        alert('SUCCESS — Services saved to Google Sheets!');
-      } else {
-        setSUI('err','failed');
-        alert('FAILED: ' + JSON.stringify(d));
-      }
-    } catch(e){
-      setSUI('err','error');
-      alert('RAW RESPONSE: ' + t.substring(0,300));
-    }
-  })
-  .catch(function(e){
-    setSUI('err','blocked');
-    alert('FETCH ERROR: ' + e.toString());
-  });
-}
+function toast(msg){var t=document.getElementById('toast');t.textContent=msg;t.className='toast show';setTimeout(function(){t.className='toast';},3000);}
 </script></body></html>

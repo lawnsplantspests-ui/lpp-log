@@ -168,8 +168,26 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans)}
 <div class="pg on" id="pg-new"><div class="body">
   <div class="lbl">Customer</div>
   <div class="fld"><label>CUSTOMER NAME ★</label><select id="cSel" onchange="onCust()"></select></div>
-  <div class="fld" id="sqFld"><label id="sqLbl">LAWN SQ FT</label>
+  <div class="fld" id="sqFld" style="display:none"><label id="sqLbl">SQ FT</label>
     <input type="number" id="sqIn" placeholder="Not on file — enter to save" min="0" step="100" oninput="onSqType()">
+  </div>
+  <div id="sqCatFlds">
+    <div class="fld sq-cat" id="sqLawnFld" style="display:none">
+      <label id="sqLawnLbl">LAWN SQ FT</label>
+      <input type="number" id="sqLawn" placeholder="Not on file — enter to save" min="0" step="100" oninput="onSqCatType('lawn')">
+    </div>
+    <div class="fld sq-cat" id="sqPHCFld" style="display:none">
+      <label id="sqPHCLbl">PHC SQ FT</label>
+      <input type="number" id="sqPHC" placeholder="Not on file — enter to save" min="0" step="100" oninput="onSqCatType('phc')">
+    </div>
+    <div class="fld sq-cat" id="sqPestFld" style="display:none">
+      <label id="sqPestLbl">PEST CONTROL SQ FT</label>
+      <input type="number" id="sqPest" placeholder="Not on file — enter to save" min="0" step="100" oninput="onSqCatType('pest')">
+    </div>
+    <div class="fld sq-cat" id="sqAquaticFld" style="display:none">
+      <label id="sqAquaticLbl">AQUATIC SQ FT</label>
+      <input type="number" id="sqAquatic" placeholder="Not on file — enter to save" min="0" step="100" oninput="onSqCatType('aquatic')">
+    </div>
   </div>
   <div class="lbl">Service / Round</div>
   <div class="fld"><label>SERVICE ★</label><select id="sSel" onchange="onSvc()"></select></div>
@@ -196,7 +214,12 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans)}
   </div>
   <div class="lbl">App Site <small>— defaults by service</small></div>
   <div class="fld"><label>APPLICATION SITE</label>
-    <select id="siteOv"><option value="">Use service default</option><option>Full Lawn</option><option>Front Lawn Only</option><option>Front Lawn + Sides</option><option>Back Lawn Only</option><option>Back Lawn + Sides</option><option>Full Property</option><option>Entire Property</option><option>Perimeter / Foundation</option><option>Shrubs / Beds</option><option>Tree - Trunk</option><option>Tree - Canopy</option><option>Nest Site - Structure</option><option>Nest Site - Ground</option><option>Mulch Beds</option></select>
+    <div style="display:flex;align-items:center;gap:7px">
+      <select id="siteOv" style="flex:1;background:transparent;border:none;outline:none;color:var(--txt);font-size:15px;font-family:var(--sans);appearance:none;-webkit-appearance:none">
+        <option value="">Use service default</option>
+      </select>
+      <button type="button" onclick="addCustomSite()" style="background:var(--gdim);color:#fff;border:none;border-radius:7px;padding:4px 10px;font-size:12px;font-family:var(--mono);cursor:pointer;white-space:nowrap;flex-shrink:0">+ Add</button>
+    </div>
   </div>
   <div class="lbl">Notes <small>(optional)</small></div>
   <div class="fld"><label>OBSERVATIONS / OVERRIDES</label><textarea id="nts" rows="3" placeholder="Field notes…"></textarea></div>
@@ -219,7 +242,18 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans)}
 </div></div>
 <!-- TOTALS -->
 <div class="pg" id="pg-tot"><div class="body">
-  <div class="period-bar"><label>PERIOD:</label><select id="totPer" onchange="renderTotals()"><option value="month">This Month</option><option value="all">All Time</option></select></div>
+  <div class="period-bar" style="flex-wrap:wrap;gap:8px">
+    <label style="font-size:10px;font-family:var(--mono);color:var(--dim)">PERIOD:</label>
+    <select id="totPer" onchange="renderTotals()" style="background:transparent;border:none;outline:none;color:var(--txt);font-size:13px;font-family:var(--mono);appearance:none;flex:1;min-width:100px">
+      <option value="today">Today</option>
+      <option value="week">This Week</option>
+      <option value="month" selected>This Month</option>
+      <option value="all">All Time</option>
+    </select>
+    <label style="font-size:10px;font-family:var(--mono);color:var(--dim)">MONTH:</label>
+    <select id="totMonth" onchange="renderTotals()" style="background:transparent;border:none;outline:none;color:var(--txt);font-size:13px;font-family:var(--mono);appearance:none;flex:1;min-width:100px">
+    </select>
+  </div>
   <div id="totContent"><div class="empty"><div class="empty-ico">📊</div><p>Archive a day to see totals.</p></div></div>
 </div></div>
 <!-- CUSTOMERS -->
@@ -243,7 +277,7 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans)}
     <h3>+ Add New Service</h3>
     <div class="prod-field"><label>Service Name</label><input type="text" id="newSvcName" placeholder="e.g. Lawn Care - Rd 9"></div>
     <div class="prod-field"><label>Default App Site</label>
-      <select id="newSvcSite"><option>Full Lawn</option><option>Perimeter / Foundation</option><option>Entire Property</option><option>Nest Site - Structure</option><option>Shrubs / Beds</option><option>Tree - Trunk</option><option>Tree - Canopy</option><option>Front Lawn Only</option><option>Full Property</option><option>Mulch Beds</option></select>
+      <select id="newSvcSite"><option>Full Lawn</option></select>
     </div>
     <div class="prod-field"><label>Notes</label><textarea id="newSvcNotes" rows="2" placeholder="Application notes…"></textarea></div>
     <div id="newProdsContainer">
@@ -271,7 +305,7 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans)}
     <h3>Edit Service</h3>
     <div class="prod-field"><label>Service Name</label><input type="text" id="epName"></div>
     <div class="prod-field"><label>Default App Site</label>
-      <select id="epSite"><option>Full Lawn</option><option>Perimeter / Foundation</option><option>Entire Property</option><option>Nest Site - Structure</option><option>Shrubs / Beds</option><option>Tree - Trunk</option><option>Tree - Canopy</option><option>Front Lawn Only</option><option>Full Property</option><option>Mulch Beds</option></select>
+      <select id="epSite"><option>Full Lawn</option></select>
     </div>
     <div class="prod-field"><label>Notes</label><textarea id="epNotes" rows="2"></textarea></div>
     <div id="editProdsContainer"></div>
@@ -306,6 +340,8 @@ if (!SV) SV = JSON.parse(JSON.stringify(DEFAULT_SV));
 window.onload = function(){
   clock(); setInterval(clock,15000); fetchWx();
   renderLog(); renderArchive();
+  populateSiteDropdown();
+  updateAllSiteDropdowns();
   setSUI('go','loading…');
   loadAll();
 };
@@ -349,10 +385,14 @@ function loadAll() {
     function(d) {
       // Load customers from sheet
       if (d.customers && d.customers.length) {
-        custDB = d.customers;
+        custDB = d.customers.map(function(c){
+          // Map sqFt to sqFtLawn for backward compatibility
+          if(!c.sqFtLawn) c.sqFtLawn = c.sqFt||'';
+          return c;
+        });
         localStorage.setItem('pda_c_cache', JSON.stringify(custDB));
       } else if (!custDB.length) {
-        custDB = DN.map(function(n){return{name:n,sqFt:''};});
+        custDB = DN.map(function(n){return{name:n,sqFt:'',sqFtLawn:'',sqFtPHC:'',sqFtPest:'',sqFtAquatic:''};});
       }
 
       // Load services from sheet — if none, push defaults up
@@ -497,6 +537,119 @@ function updateTotalsPreview() {
   }
 }
 
+function getSvcCat(svcName){
+  if(!svcName) return '';
+  var n = svcName.toLowerCase();
+  if(n.indexOf('lawn')===0||n.indexOf('lime')===0) return 'lawn';
+  if(n.indexOf('phc')===0) return 'phc';
+  if(n.indexOf('pest')===0) return 'pest';
+  if(n.indexOf('aquatic')===0||n.indexOf('pond')===0||n.indexOf('creek')===0) return 'aquatic';
+  return 'lawn'; // default
+}
+function getCustSq(name, cat){
+  var c = custDB.find(function(x){return x.name===name;});
+  if(!c) return '';
+  if(cat==='lawn') return c.sqFt||c.sqFtLawn||'';
+  if(cat==='phc') return c.sqFtPHC||'';
+  if(cat==='pest') return c.sqFtPest||'';
+  if(cat==='aquatic') return c.sqFtAquatic||'';
+  return c.sqFt||'';
+}
+function setCustSq(name, cat, val){
+  var ci = custDB.findIndex(function(x){return x.name===name;});
+  if(ci<0) return;
+  if(cat==='lawn'){custDB[ci].sqFt=val;custDB[ci].sqFtLawn=val;}
+  else if(cat==='phc') custDB[ci].sqFtPHC=val;
+  else if(cat==='pest') custDB[ci].sqFtPest=val;
+  else if(cat==='aquatic') custDB[ci].sqFtAquatic=val;
+  saveC();
+  // Update in sheet
+  if(custDB[ci].id){
+    api({action:'updateCustomer',id:custDB[ci].id,
+      name:custDB[ci].name,
+      sqFt:custDB[ci].sqFt||'',
+      sqFtLawn:custDB[ci].sqFtLawn||'',
+      sqFtPHC:custDB[ci].sqFtPHC||'',
+      sqFtPest:custDB[ci].sqFtPest||'',
+      sqFtAquatic:custDB[ci].sqFtAquatic||''
+    }, null, null);
+  }
+}
+
+// ── APP SITES ─────────────────────────────────────────────────────
+var DEFAULT_SITES = [
+  'Full Lawn','Front Lawn Only','Front Lawn + Sides','Back Lawn Only',
+  'Back Lawn + Sides','Full Property','Entire Property',
+  'Perimeter / Foundation','Shrubs / Beds','Tree - Trunk','Tree - Canopy',
+  'Nest Site - Structure','Nest Site - Ground','Mulch Beds',
+  'Creek Edge','Pond Edge','Entire Pond','Pond Bank'
+];
+
+function getSites(){
+  var stored = localStorage.getItem('pda_sites');
+  if(stored){
+    var custom = JSON.parse(stored);
+    // Merge defaults + custom, no duplicates
+    var all = DEFAULT_SITES.slice();
+    custom.forEach(function(s){
+      if(all.indexOf(s)<0) all.push(s);
+    });
+    return all;
+  }
+  return DEFAULT_SITES.slice();
+}
+
+function saveSites(sites){
+  // Only save the custom ones (not in defaults)
+  var custom = sites.filter(function(s){ return DEFAULT_SITES.indexOf(s)<0; });
+  localStorage.setItem('pda_sites', JSON.stringify(custom));
+}
+
+function populateSiteDropdown(selectedVal){
+  var sites = getSites();
+  var sel = document.getElementById('siteOv');
+  if(!sel) return;
+  var cur = selectedVal !== undefined ? selectedVal : sel.value;
+  sel.innerHTML = '<option value="">Use service default</option>'
+    + sites.map(function(s){
+        return '<option value="'+s+'"'+(s===cur?' selected':'')+'>'+s+'</option>';
+      }).join('');
+  if(cur) sel.value = cur;
+}
+
+function addCustomSite(){
+  var name = prompt('Enter new application site name:');
+  if(!name || !name.trim()) return;
+  name = name.trim();
+  var sites = getSites();
+  if(sites.indexOf(name) >= 0){ toast('Already exists'); return; }
+  sites.push(name);
+  saveSites(sites);
+  populateSiteDropdown(name);
+  // Also update service/modal dropdowns
+  updateAllSiteDropdowns();
+  toast('✓ '+name+' added to app sites');
+}
+
+function updateAllSiteDropdowns(){
+  var sites = getSites();
+  var opts = sites.map(function(s){return'<option>'+s+'</option>';}).join('');
+  // Update new service dropdown
+  var ns = document.getElementById('newSvcSite');
+  if(ns){ var cv=ns.value; ns.innerHTML=opts; ns.value=cv||ns.options[0].value; }
+  // Update edit service dropdown
+  var es = document.getElementById('epSite');
+  if(es){ var cv2=es.value; es.innerHTML=opts; es.value=cv2||es.options[0].value; }
+}
+
+function setSel(id,val){
+  var el=document.getElementById(id);
+  if(!el) return;
+  for(var i=0;i<el.options.length;i++){
+    if(el.options[i].value===val){el.value=val;return;}
+  }
+}
+
 function buildDD(){
   var cs=document.getElementById('cSel'); while(cs.options.length)cs.remove(0);
   var b=document.createElement('option');b.value='';b.textContent='— Select customer —';cs.appendChild(b);
@@ -507,33 +660,70 @@ function buildDD(){
 }
 function clock(){var n=new Date();document.getElementById('aDate').textContent=n.toLocaleDateString('en-US',{month:'2-digit',day:'2-digit',year:'numeric'});var h=n.getHours(),m=n.getMinutes(),ap=h>=12?'PM':'AM';h=h%12||12;document.getElementById('aTime').textContent=h+':'+(m<10?'0':'')+m+' '+ap;}
 function fetchWx(){var pill=document.getElementById('wpill'),st=document.getElementById('wst');pill.className='wpill loading';st.textContent='…';if(!navigator.geolocation){pill.className='wpill warn';st.textContent='No GPS';return;}navigator.geolocation.getCurrentPosition(function(pos){fetch('https://api.open-meteo.com/v1/forecast?latitude='+pos.coords.latitude+'&longitude='+pos.coords.longitude+'&current=temperature_2m,wind_speed_10m,weather_code&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=auto').then(function(r){return r.json();}).then(function(d){var c=d.current;setSel('wxC',c2c(c.weather_code));document.getElementById('wxT').value=Math.round(c.temperature_2m);setSel('wxW',m2d(Math.round(c.wind_speed_10m)));pill.className='wpill live';st.textContent=Math.round(c.temperature_2m)+'°F · '+c2c(c.weather_code);}).catch(function(){pill.className='wpill warn';st.textContent='retry';});},function(){pill.className='wpill warn';st.textContent='GPS off';},{timeout:8000});}
-function setSel(id,val){var el=document.getElementById(id);for(var i=0;i<el.options.length;i++){if(el.options[i].value===val){el.value=val;return;}}}
 function c2c(c){if(c===0)return'Clear';if(c<=2)return'Partly Cloudy';if(c===3)return'Overcast';if(c<=48)return'Foggy';if(c<=63)return'Light Rain - Pre';if(c<=82)return'Post Rain';return'Hot / Humid';}
 function m2d(m){if(m<=3)return'Calm (0-3 mph)';if(m<=7)return'Light (4-7 mph)';if(m<=12)return'Moderate (8-12 mph)';return'13+ mph';}
-function onCust(){var name=document.getElementById('cSel').value;var inp=document.getElementById('sqIn'),fld=document.getElementById('sqFld'),lbl=document.getElementById('sqLbl');fld.className='fld';inp.style.cssText='';if(!name){inp.value='';lbl.textContent='LAWN SQ FT';return;}var c=custDB.find(function(x){return x.name===name;});if(c&&c.sqFt){inp.value=c.sqFt;fld.className='fld sq-known';lbl.textContent='LAWN SQ FT  ✓ on file';inp.style.color='var(--grn)';inp.style.fontFamily='var(--mono)';}else{inp.value='';fld.className='fld sq-needed';lbl.textContent='LAWN SQ FT — not on file';} updateTotalsPreview();}
-function onSqType(){
-  var val=document.getElementById('sqIn').value.trim();
+function onCust(){
+  var name=document.getElementById('cSel').value;
+  if(!name){hideSqFlds();return;}
+  var svc=document.getElementById('sSel').value;
+  if(svc) showSqForCat(name, getSvcCat(svc));
+  updateTotalsPreview();
+}
+function hideSqFlds(){
+  document.querySelectorAll('.sq-cat').forEach(function(f){f.style.display='none';});
+}
+function showSqForCat(custName, cat){
+  hideSqFlds();
+  var ids={lawn:'sqLawn',phc:'sqPHC',pest:'sqPest',aquatic:'sqAquatic'};
+  var fldIds={lawn:'sqLawnFld',phc:'sqPHCFld',pest:'sqPestFld',aquatic:'sqAquaticFld'};
+  var lblIds={lawn:'sqLawnLbl',phc:'sqPHCLbl',pest:'sqPestLbl',aquatic:'sqAquaticLbl'};
+  var fldId=fldIds[cat]||'sqLawnFld';
+  var inpId=ids[cat]||'sqLawn';
+  var lblId=lblIds[cat]||'sqLawnLbl';
+  var fld=document.getElementById(fldId);
+  var inp=document.getElementById(inpId);
+  var lbl=document.getElementById(lblId);
+  if(!fld||!inp) return;
+  fld.style.display='block';
+  var val=getCustSq(custName,cat);
+  inp.value=val||'';
+  if(val){
+    fld.className='fld sq-known';
+    lbl.textContent=lbl.textContent.replace('✓ on file','').trim()+' ✓ on file';
+    inp.style.color='var(--grn)';inp.style.fontFamily='var(--mono)';
+  } else {
+    fld.className='fld sq-needed';
+    inp.style.cssText='';
+  }
+}
+function onSqType(){}
+function onSqCatType(cat){
+  var ids={lawn:'sqLawn',phc:'sqPHC',pest:'sqPest',aquatic:'sqAquatic'};
+  var fldIds={lawn:'sqLawnFld',phc:'sqPHCFld',pest:'sqPestFld',aquatic:'sqAquaticFld'};
+  var lblIds={lawn:'sqLawnLbl',phc:'sqPHCLbl',pest:'sqPestLbl',aquatic:'sqAquaticLbl'};
+  var val=document.getElementById(ids[cat]).value.trim();
   var name=document.getElementById('cSel').value;
   if(val&&name){
-    var ci=custDB.findIndex(function(x){return x.name===name;});
-    if(ci>=0){
-      custDB[ci].sqFt=val;
-      saveC();
-      if(custDB[ci].id) api({action:'updateCustomer',id:custDB[ci].id,name:custDB[ci].name,sqFt:val},null,null);
-    } else {
-      // New customer not in DB yet — just save locally
-      custDB.push({name:name,sqFt:val});saveC();
-    }
+    setCustSq(name,cat,val);
     renderCusts();
-    document.getElementById('sqFld').className='fld sq-known';
-    document.getElementById('sqLbl').textContent='LAWN SQ FT  ✓ saved';
-    document.getElementById('sqIn').style.color='var(--grn)';
-    document.getElementById('sqIn').style.fontFamily='var(--mono)';
+    var fld=document.getElementById(fldIds[cat]);
+    var lbl=document.getElementById(lblIds[cat]);
+    var inp=document.getElementById(ids[cat]);
+    if(fld) fld.className='fld sq-known';
+    if(lbl) lbl.textContent=lbl.textContent.replace(' ✓ saved','').replace(' ✓ on file','') + ' ✓ saved';
+    if(inp){inp.style.color='var(--grn)';inp.style.fontFamily='var(--mono)';}
   }
   updateTotalsPreview();
 }
-function onSvc(){var s=document.getElementById('sSel').value;var card=document.getElementById('pcard'),grid=document.getElementById('pgrd'),note=document.getElementById('multiNote');if(!s||!SV[s]){card.classList.remove('show');return;}var d=SV[s];grid.innerHTML=[['Product',jn(d.products,'product')],['Active Ing',jn(d.products,'activeIng')],['EPA Reg #',jn(d.products,'epa')],['Rate',jn(d.products,'rate')],['Method',jn(d.products,'method')],['Target Pest',jn(d.products,'targetPest')],['App Site',d.appSite]].map(function(kv){return'<span class="pk">'+kv[0]+'</span><span class="pv">'+kv[1]+'</span>';}).join('');note.innerHTML=d.products.length>1?'<div class="multi-note">⚡ '+d.products.length+' products — combined into 1 log entry</div>':'';card.classList.add('show');setSel('siteOv',d.appSite);updateTotalsPreview();}
-function addEntry(){var cust=document.getElementById('cSel').value;var svc=document.getElementById('sSel').value;if(!cust){toast('⚠ Select a customer');return;}if(!svc){toast('⚠ Select a service');return;}clock();var d=SV[svc];var sqFt=document.getElementById('sqIn').value.trim();var sv=document.getElementById('siteOv').value;var appSite=(sv&&sv!=='Use service default')?sv:d.appSite;var userN=document.getElementById('nts').value.trim();var wxTemp=document.getElementById('wxT').value;var combined={product:jn(d.products,'product'),activeIng:jn(d.products,'activeIng'),epa:jn(d.products,'epa'),rate:jn(d.products,'rate'),totalMixed:jn(d.products,'totalMixed'),method:jn(d.products,'method'),targetPest:jn(d.products,'targetPest')};var totals=d.products.map(function(p){return calcTotal(p.rate,sqFt);}).filter(Boolean);var tu=totals.join(' + ')||'';var entry={id:Date.now(),customer:cust,service:svc,date:document.getElementById('aDate').textContent,time:document.getElementById('aTime').textContent,sqFt:sqFt,totalUsed:tu,weather:document.getElementById('wxC').value,temp:wxTemp?(wxTemp+'°F'):'',wind:document.getElementById('wxW').value,product:combined.product,activeIng:combined.activeIng,epa:combined.epa,rate:combined.rate,totalMixed:combined.totalMixed,method:combined.method,targetPest:combined.targetPest,appSite:appSite,notes:userN?d.notes+' | '+userN:d.notes,synced:false};queue.push(entry);saveQ();renderLog();syncEntry(entry);toast('✓ Added to log');document.getElementById('cSel').value='';document.getElementById('sSel').value='';document.getElementById('sqIn').value='';document.getElementById('siteOv').value='';document.getElementById('nts').value='';document.getElementById('pcard').classList.remove('show');document.getElementById('sqFld').className='fld';document.getElementById('sqLbl').textContent='LAWN SQ FT';document.getElementById('sqIn').style.cssText='';document.getElementById('totPreview').style.display='none';goTab('log');}
+function onSvc(){var s=document.getElementById('sSel').value;var card=document.getElementById('pcard'),grid=document.getElementById('pgrd'),note=document.getElementById('multiNote');if(!s||!SV[s]){card.classList.remove('show');return;}var d=SV[s];grid.innerHTML=[['Product',jn(d.products,'product')],['Active Ing',jn(d.products,'activeIng')],['EPA Reg #',jn(d.products,'epa')],['Rate',jn(d.products,'rate')],['Method',jn(d.products,'method')],['Target Pest',jn(d.products,'targetPest')],['App Site',d.appSite]].map(function(kv){return'<span class="pk">'+kv[0]+'</span><span class="pv">'+kv[1]+'</span>';}).join('');note.innerHTML=d.products.length>1?'<div class="multi-note">⚡ '+d.products.length+' products — combined into 1 log entry</div>':'';card.classList.add('show');populateSiteDropdown(d.appSite);
+  // Show correct sq ft field for this service category
+  var custName=document.getElementById('cSel').value;
+  if(custName) showSqForCat(custName, getSvcCat(s));
+  updateTotalsPreview();}
+function addEntry(){var cust=document.getElementById('cSel').value;var svc=document.getElementById('sSel').value;if(!cust){toast('⚠ Select a customer');return;}if(!svc){toast('⚠ Select a service');return;}clock();var d=SV[svc];var svcCat=getSvcCat(svc);
+  var sqIds={lawn:'sqLawn',phc:'sqPHC',pest:'sqPest',aquatic:'sqAquatic'};
+  var sqEl=document.getElementById(sqIds[svcCat]||'sqLawn');
+  var sqFt=sqEl?sqEl.value.trim():'';var sv=document.getElementById('siteOv').value;var appSite=(sv&&sv!=='Use service default')?sv:d.appSite;var userN=document.getElementById('nts').value.trim();var wxTemp=document.getElementById('wxT').value;var combined={product:jn(d.products,'product'),activeIng:jn(d.products,'activeIng'),epa:jn(d.products,'epa'),rate:jn(d.products,'rate'),totalMixed:jn(d.products,'totalMixed'),method:jn(d.products,'method'),targetPest:jn(d.products,'targetPest')};var totals=d.products.map(function(p){return calcTotal(p.rate,sqFt);}).filter(Boolean);var tu=totals.join(' + ')||'';var entry={id:Date.now(),customer:cust,service:svc,date:document.getElementById('aDate').textContent,time:document.getElementById('aTime').textContent,sqFt:sqFt,totalUsed:tu,weather:document.getElementById('wxC').value,temp:wxTemp?(wxTemp+'°F'):'',wind:document.getElementById('wxW').value,product:combined.product,activeIng:combined.activeIng,epa:combined.epa,rate:combined.rate,totalMixed:combined.totalMixed,method:combined.method,targetPest:combined.targetPest,appSite:appSite,notes:userN?d.notes+' | '+userN:d.notes,synced:false};queue.push(entry);saveQ();renderLog();syncEntry(entry);toast('✓ Added to log');document.getElementById('cSel').value='';document.getElementById('sSel').value='';['sqLawn','sqPHC','sqPest','sqAquatic'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});hideSqFlds();document.getElementById('siteOv').value='';document.getElementById('nts').value='';document.getElementById('pcard').classList.remove('show');document.getElementById('sqFld').className='fld';document.getElementById('sqLbl').textContent='LAWN SQ FT';document.getElementById('sqIn').style.cssText='';document.getElementById('totPreview').style.display='none';goTab('log');}
 function eRow(e){return[e.date,e.time,e.customer,e.sqFt,e.service,e.product,e.activeIng,e.epa,e.targetPest,e.appSite,e.method,e.rate,e.totalMixed,e.sqFt,e.totalUsed,e.weather,e.wind,e.temp,e.notes,'Devon Alleman','608542 / BU 14521'];}
 function getTab(){var n=new Date();return n.toLocaleDateString('en-US',{month:'short',year:'numeric'}).replace(' ','_');}
 function renderLog(){var list=document.getElementById('logList'),empty=document.getElementById('logEmpty'),bar=document.getElementById('ebar'),bdg=document.getElementById('logBdg'),cnt=document.getElementById('eCnt');bdg.textContent=queue.length;bdg.className='bdg'+(queue.length?' show':'');cnt.textContent=queue.length+' entr'+(queue.length===1?'y':'ies')+' today';if(!queue.length){empty.style.display='block';list.innerHTML='';bar.className='ebar';return;}empty.style.display='none';bar.className='ebar show';list.innerHTML=queue.map(function(e,i){return'<div class="qi"><div class="qi-body'+(e.synced?'':' pend')+'">'+'<div class="qi-top"><div class="qi-name">'+e.customer+'</div><div style="display:flex;align-items:center;gap:5px"><span class="qi-time">'+e.time+'</span>'+(e.synced?'':'<button class="btn-del" onclick="removeEntry('+i+')">×</button>')+'</div></div>'+'<div class="qi-svc">'+e.service+'</div>'+'<div class="qi-pills"><span class="qp g">'+e.date+'</span><span class="qp'+(e.weather?'':' y')+'">'+(e.weather||'No weather')+'</span><span class="qp">'+(e.temp||'—')+'</span><span class="qp">'+e.appSite+'</span>'+(e.synced?'<span class="qp g">☁ synced</span>':'<span class="qp y">⏳ pending</span>')+'</div>'+(e.totalUsed?'<div style="font-size:11px;font-family:var(--mono);color:var(--grn);margin-bottom:8px">Total used: '+e.totalUsed+'</div>':'')+'<div class="qi-sq"><label>SQ FT:</label><input class="sq-inp'+(e.sqFt?' sv':'')+'" type="number" value="'+(e.sqFt||'')+'" placeholder="enter sq ft" onchange="updateSq('+i+',this)"><span class="flash" id="sf-'+i+'">✓</span></div>'+'</div></div>';}).join('');}
@@ -545,8 +735,141 @@ function tA(mk){document.getElementById('ab-'+mk).classList.toggle('open');}
 function moL(m,y){var n=['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];return n[parseInt(m)]+' '+y;}
 function exMo(mk){var p=mk.split('-');var all=[];archive.filter(function(a){var q=a.date.split('/');return q[2]===p[0]&&(q[0].length<2?'0':'')+q[0]===p[1];}).forEach(function(d){all=all.concat(d.entries);});if(!all.length){toast('No entries');return;}cpTsv(all);toast('✓ '+all.length+' rows copied');}
 // delMo removed — archive is permanent
-function renderTotals(){var period=document.getElementById('totPer').value;var el=document.getElementById('totContent');var all=getPE(period);if(!all.length){el.innerHTML='<div class="empty"><div class="empty-ico">📊</div><p>Archive a day to see totals.</p></div>';return;}var cats={'Lawn Care':0,'Pest Control':0,'Yellow Jackets':0,'PHC / Tree & Shrub':0};var bySvc={},byMo={},sqT=0;all.forEach(function(e){if(e.service.indexOf('Lawn')===0||e.service.indexOf('Lime')===0)cats['Lawn Care']++;else if(e.service.indexOf('Pest')===0)cats['Pest Control']++;else if(e.service.indexOf('Yellow')===0)cats['Yellow Jackets']++;else cats['PHC / Tree & Shrub']++;bySvc[e.service]=(bySvc[e.service]||0)+1;var p=e.date.split('/');var k=moL(p[0],p[2]);byMo[k]=(byMo[k]||0)+1;sqT+=parseFloat(e.sqFt)||0;});var uniq=new Set(all.map(function(e){return e.customer;})).size;var mos=Object.keys(byMo).length||1;el.innerHTML='<div class="stat-grid"><div class="stat-box"><div class="sb-val">'+all.length+'</div><div class="sb-lbl">Total Apps</div></div><div class="stat-box"><div class="sb-val">'+uniq+'</div><div class="sb-lbl">Customers</div></div><div class="stat-box"><div class="sb-val">'+(sqT>0?Math.round(sqT/1000)+'k':'—')+'</div><div class="sb-lbl">Total Sq Ft</div></div><div class="stat-box"><div class="sb-val">'+Math.round(all.length/mos)+'</div><div class="sb-lbl">Avg / Month</div></div></div>'+'<div class="tot-sec">By Category</div><div class="tot-card">'+Object.entries(cats).map(function(kv){return'<div class="tot-row"><span>'+kv[0]+'</span><b>'+kv[1]+'</b></div>';}).join('')+'</div>'+'<div class="tot-sec">By Service</div><div class="tot-card">'+Object.entries(bySvc).sort(function(a,b){return b[1]-a[1];}).slice(0,15).map(function(kv){return'<div class="tot-row"><span style="font-size:11px">'+kv[0]+'</span><b>'+kv[1]+'</b></div>';}).join('')+'</div>'+(period==='all'?'<div class="tot-sec">By Month</div><div class="tot-card">'+Object.entries(byMo).map(function(kv){return'<div class="tot-row"><span>'+kv[0]+'</span><b>'+kv[1]+'</b></div>';}).join('')+'</div>':'');}
-function getPE(period){var all=[];archive.forEach(function(d){all=all.concat(d.entries);});if(period==='all')return all;var n=new Date();return all.filter(function(e){var p=e.date.split('/');return parseInt(p[0])===n.getMonth()+1&&parseInt(p[2])===n.getFullYear();});}
+function renderTotals(){
+  populateMonthDropdown();
+  var period=document.getElementById('totPer').value;
+  var el=document.getElementById('totContent');
+  var all=getPE(period);
+  if(!all.length){el.innerHTML='<div class="empty"><div class="empty-ico">📊</div><p>No entries for this period.</p></div>';return;}
+
+  // Stats
+  var cats={'Lawn Care':0,'Pest Control':0,'Yellow Jackets':0,'PHC / Tree & Shrub':0,'Aquatic':0};
+  var bySvc={},byProd={},sqT=0,byMo={};
+  all.forEach(function(e){
+    var n=e.service||'';
+    if(n.indexOf('Lawn')===0||n.indexOf('Lime')===0) cats['Lawn Care']++;
+    else if(n.indexOf('Pest')===0) cats['Pest Control']++;
+    else if(n.indexOf('Yellow')===0) cats['Yellow Jackets']++;
+    else if(n.indexOf('PHC')===0) cats['PHC / Tree & Shrub']++;
+    else if(n.indexOf('Aquatic')===0||n.indexOf('Pond')===0||n.indexOf('Creek')===0) cats['Aquatic']++;
+    bySvc[n]=(bySvc[n]||0)+1;
+    sqT+=parseFloat(e.sqFt)||0;
+    var p=e.date.split('/');
+    var mk=moL(p[0],p[2]);
+    byMo[mk]=(byMo[mk]||0)+1;
+    // Product totals
+    if(e.totalUsed&&e.totalUsed.trim()){
+      var prods=(e.product||'').split(' + ');
+      var tots=(e.totalUsed||'').split(' + ');
+      prods.forEach(function(pn,i){
+        pn=pn.trim();if(!pn)return;
+        var tv=tots[i]?tots[i].trim():'';
+        if(!tv)return;
+        var m=tv.match(/([\d.]+)\s*(lbs?|oz|fl\s*oz|gal)/i);
+        if(!m)return;
+        var amt=parseFloat(m[1]);var unit=m[2].toLowerCase().replace(/\s/g,'');
+        if(!byProd[pn]) byProd[pn]={};
+        byProd[pn][unit]=(byProd[pn][unit]||0)+amt;
+      });
+    }
+  });
+
+  var uniq=new Set(all.map(function(e){return e.customer;})).size;
+  var mos=Object.keys(byMo).length||1;
+  var html='<div class="stat-grid">'
+    +'<div class="stat-box"><div class="sb-val">'+all.length+'</div><div class="sb-lbl">Total Apps</div></div>'
+    +'<div class="stat-box"><div class="sb-val">'+uniq+'</div><div class="sb-lbl">Customers</div></div>'
+    +'<div class="stat-box"><div class="sb-val">'+(sqT>0?Math.round(sqT/1000)+'k':'—')+'</div><div class="sb-lbl">Sq Ft Treated</div></div>'
+    +'<div class="stat-box"><div class="sb-val">'+Math.round(all.length/mos)+'</div><div class="sb-lbl">Avg / Month</div></div>'
+    +'</div>';
+
+  // By category
+  html+='<div class="tot-sec">By Category</div><div class="tot-card">'
+    +Object.entries(cats).filter(function(kv){return kv[1]>0;}).map(function(kv){
+      return'<div class="tot-row"><span>'+kv[0]+'</span><b>'+kv[1]+'</b></div>';
+    }).join('')+'</div>';
+
+  // Product totals
+  var prodKeys=Object.keys(byProd);
+  if(prodKeys.length){
+    html+='<div class="tot-sec">Product Totals Used</div><div class="tot-card">';
+    prodKeys.forEach(function(pn){
+      var units=byProd[pn];
+      var totStr=Object.entries(units).map(function(kv){return kv[1].toFixed(2)+' '+kv[0];}).join(', ');
+      html+='<div class="tot-row"><span style="font-size:11px">'+pn+'</span><b style="font-size:11px">'+totStr+'</b></div>';
+    });
+    html+='</div>';
+  }
+
+  // By service
+  html+='<div class="tot-sec">By Service</div><div class="tot-card">'
+    +Object.entries(bySvc).sort(function(a,b){return b[1]-a[1];}).slice(0,15).map(function(kv){
+      return'<div class="tot-row"><span style="font-size:11px">'+kv[0]+'</span><b>'+kv[1]+'</b></div>';
+    }).join('')+'</div>';
+
+  // By month (all time only)
+  if(period==='all'&&Object.keys(byMo).length>1){
+    html+='<div class="tot-sec">By Month</div><div class="tot-card">'
+      +Object.entries(byMo).map(function(kv){return'<div class="tot-row"><span>'+kv[0]+'</span><b>'+kv[1]+'</b></div>';}).join('')
+      +'</div>';
+  }
+
+  el.innerHTML=html;
+}
+
+function populateMonthDropdown(){
+  var sel=document.getElementById('totMonth');
+  if(!sel) return;
+  var all=[];
+  archive.forEach(function(d){all=all.concat(d.entries);});
+  var months={};
+  all.forEach(function(e){
+    var p=e.date.split('/');
+    var k=p[2]+'-'+(p[0].length<2?'0':'')+p[0];
+    months[k]=moL(p[0],p[2]);
+  });
+  var keys=Object.keys(months).sort().reverse();
+  var cur=sel.value;
+  sel.innerHTML='<option value="">All Months</option>'
+    +keys.map(function(k){return'<option value="'+k+'"'+(k===cur?' selected':'')+'>'+months[k]+'</option>';}).join('');
+  // Hide month selector unless period is month
+  var period=document.getElementById('totPer').value;
+  sel.parentElement.style.display=(period==='month'||period==='all')?'flex':'none';
+}
+
+
+function getPE(period){
+  var all=[];
+  archive.forEach(function(d){all=all.concat(d.entries);});
+  all=all.concat(queue);
+  var n=new Date();
+  if(period==='all') return all;
+  if(period==='today'){
+    var tod=n.toLocaleDateString('en-US',{month:'2-digit',day:'2-digit',year:'numeric'});
+    return all.filter(function(e){return e.date===tod;});
+  }
+  if(period==='week'){
+    var weekAgo=new Date(n.getTime()-7*24*60*60*1000);
+    return all.filter(function(e){
+      var p=e.date.split('/');
+      var d=new Date(parseInt(p[2]),parseInt(p[0])-1,parseInt(p[1]));
+      return d>=weekAgo;
+    });
+  }
+  // month — check specific month selector first
+  var selMo=document.getElementById('totMonth');
+  if(selMo&&selMo.value){
+    var parts=selMo.value.split('-');
+    return all.filter(function(e){
+      var p=e.date.split('/');
+      return p[2]===parts[0]&&(p[0].length<2?'0':'')+p[0]===parts[1];
+    });
+  }
+  return all.filter(function(e){
+    var p=e.date.split('/');
+    return parseInt(p[0])===n.getMonth()+1&&parseInt(p[2])===n.getFullYear();
+  });
+}
 function exportAll(){if(!queue.length){toast('Nothing to export');return;}cpTsv(queue);toast('✓ '+queue.length+' rows copied');}
 function cpTsv(entries){var rows=entries.map(function(e){return eRow(e).join('\t');}).join('\n');if(navigator.clipboard)navigator.clipboard.writeText(rows);else{var ta=document.createElement('textarea');ta.value=rows;ta.style.cssText='position:fixed;opacity:0';document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);}}
 function renderCusts(){
@@ -555,28 +878,45 @@ function renderCusts(){
   document.getElementById('custMeta').textContent=f.length+' of '+custDB.length+' customers';
   document.getElementById('custList').innerHTML=f.map(function(c){
     var idx=custDB.indexOf(c);
-    return '<div class="cust-item"><div class="ci-info">'
-      +'<div class="ci-name">'+c.name+'</div>'
-      +'<div class="ci-sq"><label>sq ft:</label>'
-      +'<input type="number" class="'+(c.sqFt?'hv':'')+'" value="'+(c.sqFt||'')+'" placeholder="not on file" onchange="uCSq('+idx+',this)">'
-      +'<span class="ci-flash" id="cf-'+idx+'">✓</span></div></div>'
-      +'<div style="display:flex;gap:6px">'
+    return '<div class="cust-item" style="flex-direction:column;align-items:stretch;gap:6px">'
+      +'<div style="display:flex;align-items:center;gap:8px">'
+      +'<div class="ci-info"><div class="ci-name">'+c.name+'</div></div>'
+      +'<div style="display:flex;gap:6px;flex-shrink:0">'
       +'<button class="btn-sm" onclick="editCust('+idx+')" style="font-size:10px;padding:4px 8px">Edit</button>'
       +'<button class="btn-del" onclick="dC('+idx+')">×</button>'
-      +'</div></div>';
+      +'</div></div>'
+      +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:5px">'
+      +sqField('Lawn',c.sqFtLawn||c.sqFt||'',idx,'lawn')
+      +sqField('PHC',c.sqFtPHC||'',idx,'phc')
+      +sqField('Pest',c.sqFtPest||'',idx,'pest')
+      +sqField('Aquatic',c.sqFtAquatic||'',idx,'aquatic')
+      +'</div>'
+      +'<span class="ci-flash" id="cf-'+idx+'">✓ saved</span>'
+      +'</div>';
   }).join('');
+}
+function sqField(label,val,idx,cat){
+  return '<div style="background:var(--sur2);border:1px solid var(--bdr);border-radius:7px;padding:5px 8px">'
+    +'<div style="font-size:9px;font-family:var(--mono);color:var(--mut);margin-bottom:2px">'+label+'</div>'
+    +'<input type="number" style="width:100%;background:transparent;border:none;outline:none;font-size:12px;font-family:var(--mono);color:'+(val?'var(--grn)':'var(--txt)')+'" '
+    +'value="'+(val||'')+'" placeholder="-" onchange="uCSqCat('+idx+',this,\'' + cat + '\')">'
+    +'</div>';
 }
 function uCSq(idx,el){
   custDB[idx].sqFt=el.value.trim();
+  custDB[idx].sqFtLawn=el.value.trim();
   saveC();
-  el.className=custDB[idx].sqFt?'hv':'';
+  var c=custDB[idx];
+  if(c.id) api({action:'updateCustomer',id:c.id,name:c.name,sqFt:c.sqFt||'',sqFtLawn:c.sqFtLawn||'',sqFtPHC:c.sqFtPHC||'',sqFtPest:c.sqFtPest||'',sqFtAquatic:c.sqFtAquatic||''},null,null);
+}
+function uCSqCat(idx,el,cat){
+  var val=el.value.trim();
+  el.style.color=val?'var(--grn)':'var(--txt)';
+  setCustSq(custDB[idx].name,cat,val);
   var f=document.getElementById('cf-'+idx);
   if(f){f.className='ci-flash show';setTimeout(function(){f.className='ci-flash';},1800);}
-  var c=custDB[idx];
-  if(c.id){
-    api({action:'updateCustomer',id:c.id,name:c.name,sqFt:c.sqFt},null,null);
-  }
 }
+
 function editCust(idx){
   var c=custDB[idx];
   var newName=prompt('Edit customer name:',c.name);
@@ -637,7 +977,7 @@ function dC(idx){
     });
   }
 }
-function renderProds(){var q=(document.getElementById('prodQ')||{value:''}).value.toLowerCase();var keys=Object.keys(SV).filter(function(k){return k.toLowerCase().indexOf(q)>=0;});document.getElementById('prodMeta').textContent=keys.length+' of '+Object.keys(SV).length+' services';var cats={'Lawn Care':[],'Lime':[],'Pest Control':[],'Yellow Jackets':[],'PHC':[],'Other':[]};keys.forEach(function(k){if(k.indexOf('Lawn')===0)cats['Lawn Care'].push(k);else if(k.indexOf('Lime')===0)cats['Lime'].push(k);else if(k.indexOf('Pest')===0)cats['Pest Control'].push(k);else if(k.indexOf('Yellow')===0)cats['Yellow Jackets'].push(k);else if(k.indexOf('PHC')===0)cats['PHC'].push(k);else cats['Other'].push(k);});var html='';Object.keys(cats).forEach(function(cat){if(!cats[cat].length)return;html+='<div class="cat-hdr">'+cat+'</div>';cats[cat].forEach(function(k){var d=SV[k];var pid=btoa(encodeURIComponent(k));html+='<div class="prod-item"><div class="prod-hdr" onclick="tProd(\''+pid+'\')">'+'<div class="prod-title"><div class="prod-name">'+k+'</div><div class="prod-sub">'+d.products.map(function(p){return p.product;}).join(' + ')+'</div>'+(d.products.length>1?'<span class="prod-multi">'+d.products.length+' products</span>':'')+'</div><div class="prod-actions"><button class="btn-sm" onclick="event.stopPropagation();openEditSvc(\''+pid+'\')">Edit</button><button class="btn-del" onclick="event.stopPropagation();deleteSvc(\''+pid+'\')">×</button></div></div>'+'<div class="prod-body" id="pb-'+pid+'">'+d.products.map(function(p,i){return'<div class="sub-prod">'+(d.products.length>1?'<div class="sub-prod-num">Product '+(i+1)+'</div>':'')+'<div class="pgrd"><span class="pk">Product</span><span class="pv">'+p.product+'</span><span class="pk">Active Ing</span><span class="pv">'+p.activeIng+'</span><span class="pk">EPA Reg #</span><span class="pv">'+p.epa+'</span><span class="pk">Rate</span><span class="pv">'+p.rate+'</span><span class="pk">Method</span><span class="pv">'+p.method+'</span><span class="pk">Target Pest</span><span class="pv">'+p.targetPest+'</span></div></div>';}).join('')+'</div></div>';});});document.getElementById('prodList').innerHTML=html;}
+function renderProds(){var q=(document.getElementById('prodQ')||{value:''}).value.toLowerCase();var keys=Object.keys(SV).filter(function(k){return k.toLowerCase().indexOf(q)>=0;});document.getElementById('prodMeta').textContent=keys.length+' of '+Object.keys(SV).length+' services';var cats={'Lawn Care':[],'Lime':[],'Pest Control':[],'Yellow Jackets':[],'PHC':[],'Aquatic':[],'Other':[]};keys.forEach(function(k){if(k.indexOf('Lawn')===0)cats['Lawn Care'].push(k);else if(k.indexOf('Lime')===0)cats['Lime'].push(k);else if(k.indexOf('Pest')===0)cats['Pest Control'].push(k);else if(k.indexOf('Yellow')===0)cats['Yellow Jackets'].push(k);else if(k.indexOf('PHC')===0)cats['PHC'].push(k);else if(k.indexOf('Aquatic')===0||k.indexOf('Pond')===0||k.indexOf('Creek')===0)cats['Aquatic'].push(k);else cats['Other'].push(k);});var html='';Object.keys(cats).forEach(function(cat){if(!cats[cat].length)return;html+='<div class="cat-hdr">'+cat+'</div>';cats[cat].forEach(function(k){var d=SV[k];var pid=btoa(encodeURIComponent(k));html+='<div class="prod-item"><div class="prod-hdr" onclick="tProd(\''+pid+'\')">'+'<div class="prod-title"><div class="prod-name">'+k+'</div><div class="prod-sub">'+d.products.map(function(p){return p.product;}).join(' + ')+'</div>'+(d.products.length>1?'<span class="prod-multi">'+d.products.length+' products</span>':'')+'</div><div class="prod-actions"><button class="btn-sm" onclick="event.stopPropagation();openEditSvc(\''+pid+'\')">Edit</button><button class="btn-del" onclick="event.stopPropagation();deleteSvc(\''+pid+'\')">×</button></div></div>'+'<div class="prod-body" id="pb-'+pid+'">'+d.products.map(function(p,i){return'<div class="sub-prod">'+(d.products.length>1?'<div class="sub-prod-num">Product '+(i+1)+'</div>':'')+'<div class="pgrd"><span class="pk">Product</span><span class="pv">'+p.product+'</span><span class="pk">Active Ing</span><span class="pv">'+p.activeIng+'</span><span class="pk">EPA Reg #</span><span class="pv">'+p.epa+'</span><span class="pk">Rate</span><span class="pv">'+p.rate+'</span><span class="pk">Method</span><span class="pv">'+p.method+'</span><span class="pk">Target Pest</span><span class="pv">'+p.targetPest+'</span></div></div>';}).join('')+'</div></div>';});});document.getElementById('prodList').innerHTML=html;}
 function tProd(pid){document.getElementById('pb-'+pid).classList.toggle('open');}
 function getProdLibrary(){
   var seen={};var lib=[];

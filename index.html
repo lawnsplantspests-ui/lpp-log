@@ -171,6 +171,22 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans)}
   <div class="fld" id="sqFld" style="display:none"><label id="sqLbl">SQ FT</label>
     <input type="number" id="sqIn" placeholder="Not on file — enter to save" min="0" step="100" oninput="onSqType()">
   </div>
+  <!-- Spot spray toggle -->
+  <div style="display:flex;gap:8px;margin-bottom:7px" id="sprayToggle" style="display:none">
+    <button type="button" id="btnFullLawn" onclick="setSprayMode('full')"
+      style="flex:1;padding:9px;border-radius:8px;font-size:12px;font-weight:600;font-family:var(--mono);cursor:pointer;border:2px solid var(--gdim);background:var(--gdim);color:#fff">
+      Full Lawn
+    </button>
+    <button type="button" id="btnSpotSpray" onclick="setSprayMode('spot')"
+      style="flex:1;padding:9px;border-radius:8px;font-size:12px;font-weight:600;font-family:var(--mono);cursor:pointer;border:2px solid var(--bdr);background:var(--sur);color:var(--dim)">
+      Spot Spray
+    </button>
+  </div>
+  <!-- Spot spray sq ft field (only shown when spot spray active) -->
+  <div class="fld" id="spotSqFld" style="display:none">
+    <label>SPOT SPRAY SQ FT <small>— used for product calc only, not saved to customer</small></label>
+    <input type="number" id="spotSqIn" placeholder="e.g. 2500" min="0" step="100" oninput="updateTotalsPreview()">
+  </div>
   <div id="sqCatFlds">
     <div class="fld sq-cat" id="sqLawnFld" style="display:none">
       <label id="sqLawnLbl">LAWN SQ FT</label>
@@ -250,7 +266,7 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans)}
       <option value="month" selected>This Month</option>
       <option value="all">All Time</option>
     </select>
-    <label style="font-size:10px;font-family:var(--mono);color:var(--dim)">MONTH:</label>
+    <label id="totMonthLabel" style="font-size:10px;font-family:var(--mono);color:var(--dim)">MONTH:</label>
     <select id="totMonth" onchange="renderTotals()" style="background:transparent;border:none;outline:none;color:var(--txt);font-size:13px;font-family:var(--mono);appearance:none;flex:1;min-width:100px">
     </select>
   </div>
@@ -295,7 +311,10 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans)}
     <button class="add-prod-btn" onclick="addNewProdField()">+ Add Second Product</button>
     <button class="btn-primary" onclick="addSvc()" style="margin-top:4px">Save New Service</button>
   </div>
-  <div class="search-bar"><span style="color:var(--mut)">🔍</span><input type="text" id="prodQ" placeholder="Search services…" oninput="renderProds()"></div>
+  <div style="display:flex;gap:8px;margin-bottom:8px">
+    <div class="search-bar" style="flex:1;margin-bottom:0"><span style="color:var(--mut)">🔍</span><input type="text" id="prodQ" placeholder="Search services…" oninput="renderProds()"></div>
+    <button class="btn-sm" onclick="addCustomCategory()" style="color:var(--grn);border-color:var(--gdim);white-space:nowrap">+ Category</button>
+  </div>
   <div class="cust-meta" id="prodMeta"></div>
   <div id="prodList"></div>
 </div></div>
@@ -321,10 +340,12 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans)}
 var SYNC_URL='https://script.google.com/macros/s/AKfycbyw4TPS0dpkTvWtUvGvo6PeYihxWyy64UdykKhV4nXshpn5YNiiL8vGd31gShSwzIJ3/exec';
 var API_URL='https://script.google.com/macros/s/AKfycbyAeSADhpd4K2OQ1iEgEtllVJQMzCphMaEgFcpJAMRerG3oN2htK6seDGnT90YE8tO1/exec';
 var SHEET_ID='1ZLuqBz61IXa5CEQieNQbhTLxH6EJYGmxJiXjeyaswa0';
-var HEADERS=['Date','Time','Customer','Sq Ft','Service','Product','Active Ingredient','EPA Reg #','Target Pest','App Site','Method','Rate','Total Mixed','Area Treated','Total Used','Weather','Wind','Temp','Notes','Applicator','Cert #'];
+var HEADERS=['Date','Time','Customer','Sq Ft','Service','Product','Active Ingredient','EPA Reg #','Target Pest','App Site','Method','Rate','Total Mixed','Area Treated','Total Used','Spot Spray Sq Ft','Weather','Wind','Temp','Notes','Applicator','Cert #'];
 var DN=['Aaron Sherrick','Adam Shaffer','Akbar Bardikalaie','Ann Gutshall','Anshul Gupta','Beck The Beast Lawn Care',"Been's Bees",'Bill Parthemore','Bob Peda','Bonnie Manning','Brandon Ramsey','Brent & Hilary Miller','Brian Peda','Brian Stahl','Camilla Rosenberger','Capital City Airport HAR','Carlos Rivera','Carmine Conti','Cheryl Lentz','Chris & Kayla Jones','Chris Conrad','Chris Day','Chris Kardos','Chris Pupo','Chris Semancik','Chris Wingard','Chuck Trenn','Cleveland Brothers Equipment','Cyndi Kirkpatrick','Cynthia Sussman','Dan Conner','Daniel J Reed Landscaping','Dave & Cindy Killinger','Dave Miller','Dave Skerpon','David Espenshade','Davinder Sidhu','Dda Bramaz','Deb Bender','Deb Odonnell','Debbie Galbraith','Devon Alleman','Don Nispel','Donald Biner','Drew Scales','Ed Dickerson','Elizabeth Lyon','Eric Galeano','Felicia George','Flossie Wolf','Frank Hill','Gail Rennex','Gary & Vickie Gray','Griffon Yohn','Harold Smedley','Ian Manning','Illuminated Integration','Illuminated Integration Cameron','Illuminated Integration Fulling Mill','J & S Classics','Jack & Karen Weiss','Jack & Nancy Baker','James Wilson','Janet Fox','Janet Roschel','Janis Miller','Jason Burnham','Jeff Dempsey','Jeff Krall','Jenn Crabtree','Jess Polynone','Jesse Dupes','Jim Holtzman','Jim Sours','JMH Landscape','Joe Holmberg','Joe Kautz','Joe Taveras','John & Shelia Heapes','John Alexander','John Geib','John Heiselman','John Holtzman','John Ignatosky','John Ponnett','John Reed','John Snavely','John Womer','Josh Hickey','Joyce Ernst','Judy Miller','Justin Harmon','Justin Jacobeen','Justin Walker','Kaitlin Boyle','Karen Bollman','Katie Raymond','Keith Bashore','Keith George','Ken Hess','Kevin Lutz','Kristen Long','Lauren Kegris','Lawns Plants & Pests LLC','Linda Buchold','Marlene Sheets','Marty & Rae Vyenielo','Mary Ann Eby','Mate Krpan','Matthew Rowe','Maxine Wertz','Michael Zuvich','Mick Iskric Jr','Mike & Brittany Miller','Mike Della Porta','Mike Gargiulo','Mike Gennett','Mike Hoppes','Mollie Barnes','Molly Bargman','Neil Muro','Nic Barrelet','Nicole Cole','PA Holstein Assoc','Pam Leonard','Pam Wrenn','Pankaj Agarwal','Patty Sandoval','Paul Guistwhite','Paul Leidigh','Paul Lotier','Peak Building and Remodeling','Pete Colello','Pete Pates','Randy Alleman','Ray Davis','Rich Burgett','Richard Switaj','Rick Miller','Rick Winter','Rob Rothenberger','Rob Schultz','Rob Soutner','Ron & Cheryl Alleman','Rushi Patel','Ryan & Stefanie Reisser','Ryan Miller','Ryan Parthemore','Sansar Sidhu','Sara Love','Scott Lindstrom','Scott Peterskin','Sharon Brooks','Shawn Bord','Spring Hill HOA','Stephen Bair','Steve Geib','Sue & Randy Kegerise','Sue Kompare','Susan Renee','Terry Brawley','Terry Shoemaker','Thomas Diehl','Tia Gilbert','Tim Minsker','Tim Minsker Sr','Tim Reigel','Todd Witalec','Tom & Cindy Poleshuk','Tracey Jones','Tyler George','Tyler Hoffman','Vince Beaver','Wanda Metzger'];
 
-var DEFAULT_SV={'Lawn Care - Rd 1 (Fertilizer Only)':{appSite:'Full Lawn',notes:'Fertilizer only — no pesticide applied this round.',products:[{product:'Spring Valley Fertilizer (granular)',activeIng:'N/A — Fertilizer Only',epa:'N/A',rate:'4 lbs / 1000 sqft granular',totalMixed:'Granular — record bags used',method:'Z-Spray: Lavender AVI-110025 | 5 mph | 40 PSI | Spreader @ 4 lbs/1000 sqft',targetPest:'N/A — Fertility'}]},'Lawn Care - Rd 2A (12-0-0 w/ Prodiamine 0.38%)':{appSite:'Full Lawn',notes:'Crabgrass pre-emergent + fertilizer.',products:[{product:'Spring Valley 12-0-0 w/ Prodiamine 0.38%',activeIng:'Prodiamine 0.38%',epa:'Per bag label (Spring Valley / site one)',rate:'4 lbs / 1000 sqft granular',totalMixed:'Granular — record bags used',method:'Z-Spray: Lavender AVI-110025 | 5 mph | 40 PSI | Spreader @ 4 lbs/1000 sqft',targetPest:'Annual Grasses'}]},'Lawn Care - Rd 2B (13-0-5 w/ Dimension 0.13%)':{appSite:'Full Lawn',notes:'Crabgrass pre-emergent + fertilizer (13-0-5).',products:[{product:'Spring Valley 13-0-5 w/ Dimension (Dithiopyr) 0.13%',activeIng:'Dithiopyr 0.13%',epa:'Per bag label (Spring Valley / site one)',rate:'4 lbs / 1000 sqft granular',totalMixed:'Granular — record bags used',method:'Z-Spray: Lavender AVI-110025 | 5 mph | 40 PSI | Spreader @ 4 lbs/1000 sqft',targetPest:'Annual Grasses'}]},'Lawn Care - Rd 3 (Weed & Feed - Spring)':{appSite:'Full Lawn',notes:'Z-Spray spreads fert + sprays herbicide in one pass.',products:[{product:'Spring Valley Fertilizer (granular)',activeIng:'N/A — Fertilizer Only',epa:'N/A',rate:'4 lbs / 1000 sqft granular',totalMixed:'Granular — record bags used',method:'Z-Spray: Lavender AVI-110025 | 5 mph | 40 PSI | Spreader @ 4 lbs/1000 sqft',targetPest:'N/A — Fertility'},{product:'Strike 3 / 3-Way Herbicide',activeIng:'2,4-D + MCPP + Dicamba',epa:'228-397 (Strike 3 / 3-Way Generic)',rate:'0.34 gal / 1000 sqft spray output',totalMixed:'Liquid spray simultaneously with granular',method:'Z-Spray: Lavender AVI-110025 | 5 mph | 40 PSI | 0.34 gal/1000 sqft',targetPest:'Broadleaf Weeds'}]},'Lawn Care - Rd 4 (Spring Valley Fertilizer)':{appSite:'Full Lawn',notes:'Fertilizer only. No pesticide applied.',products:[{product:'Spring Valley Fertilizer (granular)',activeIng:'N/A — Fertilizer Only',epa:'N/A',rate:'4 lbs / 1000 sqft granular',totalMixed:'Granular — record bags used',method:'Z-Spray: Lavender AVI-110025 | 5 mph | 40 PSI | Spreader @ 4 lbs/1000 sqft',targetPest:'N/A — Fertility'}]},'Lawn Care - Rd 5 (15-0-3 Protego Ima-Lambda)':{appSite:'Full Lawn',notes:'Water in 24-48 hrs.',products:[{product:'Spring Valley 15-0-3 Protego Ima-Lambda',activeIng:'Imidacloprid + Lambda-Cyhalothrin',epa:'Per bag label (Spring Valley 15-0-3 Protego)',rate:'4 lbs / 1000 sqft granular',totalMixed:'Granular — record bags used',method:'Z-Spray: Lavender AVI-110025 | 5 mph | 40 PSI | Spreader @ 4 lbs/1000 sqft',targetPest:'Grubs (White Grub)'}]},'Lawn Care - Rd 6 (Tenacity + Bifenthrin Tank Mix)':{appSite:'Full Lawn',notes:'Tank mix + NIS surfactant.',products:[{product:'Tenacity (Mesotrione 40%)',activeIng:'Mesotrione 40%',epa:'100-1139 (Tenacity)',rate:'1 fl oz / 1000 sqft',totalMixed:'Record gal mixed',method:'Z-Spray: Lavender AVI-110025 | 5 mph | 40 PSI | 0.34 gal/1000 sqft',targetPest:'Crabgrass'},{product:'Bifenthrin 7.9% (liquid)',activeIng:'Bifenthrin 7.9%',epa:'279-3206',rate:'0.34 gal / 1000 sqft',totalMixed:'Record gal mixed',method:'Z-Spray: Lavender AVI-110025 | 5 mph | 40 PSI | 0.34 gal/1000 sqft',targetPest:'Surface Insects'}]},'Lawn Care - Rd 7 (Fall Weed & Feed)':{appSite:'Full Lawn',notes:'Target actively growing broadleaf weeds before frost.',products:[{product:'Spring Valley Fertilizer (granular)',activeIng:'N/A — Fertilizer Only',epa:'N/A',rate:'4 lbs / 1000 sqft granular',totalMixed:'Granular — record bags used',method:'Z-Spray: Lavender AVI-110025 | 5 mph | 40 PSI | Spreader @ 4 lbs/1000 sqft',targetPest:'N/A — Fertility'},{product:'Strike 3 / 3-Way Herbicide',activeIng:'2,4-D + MCPP + Dicamba',epa:'228-397 (Strike 3 / 3-Way Generic)',rate:'0.34 gal / 1000 sqft output',totalMixed:'Granular broadcast + liquid spray simultaneously',method:'Z-Spray: Lavender AVI-110025 | 5 mph | 40 PSI | Spreader @ 4 lbs/1000 sqft',targetPest:'Broadleaf Weeds'}]},'Lawn Care - Rd 8 (Winterizer)':{appSite:'Full Lawn',notes:'High bio winterizer.',products:[{product:'High Bio Winterizer Fertilizer (high K)',activeIng:'N/A — Fertilizer Only',epa:'N/A',rate:'4 lbs / 1000 sqft granular',totalMixed:'Granular — record bags used',method:'Z-Spray: Lavender AVI-110025 | 5 mph | 40 PSI | Spreader @ 4 lbs/1000 sqft',targetPest:'N/A — Fertility'}]},'Lawn Care - Nutsedge (Sledgehammer)':{appSite:'Full Lawn',notes:'Add NIS surfactant. Reapply in 6-10 weeks if regrowth.',products:[{product:'Sledgehammer (Halosulfuron-methyl 75%)',activeIng:'Halosulfuron-methyl 75%',epa:'62719-542',rate:'1.33 oz / 1000 sqft',totalMixed:'Record gal mixed',method:'Z-Spray: Lavender AVI-110025 | 5 mph | 40 PSI | 0.34 gal/1000 sqft',targetPest:'Nutsedge'}]},'Lime Treatment (Sol-U-Cal)':{appSite:'Full Lawn',notes:'Soil amendment only — raises pH.',products:[{product:'Sol-U-Cal Liquid Lime',activeIng:'Calcium Carbonate (Soluble) — Soil Amendment',epa:'N/A — Soil Amendment',rate:'0.34 gal / 1000 sqft',totalMixed:'Record gal applied',method:'Z-Spray: Lavender AVI-110025 | 5 mph | 40 PSI | 0.34 gal/1000 sqft',targetPest:'N/A — pH Correction'}]},'Pest Control - Perimeter Liquid Bifenthrin':{appSite:'Perimeter / Foundation',notes:'Liquid perimeter spray — foundation, eaves, entry points.',products:[{product:'Bifenthrin 7.9% (liquid)',activeIng:'Bifenthrin 7.9%',epa:'279-3206',rate:'0.5-1 fl oz / gal water',totalMixed:'Record gal applied',method:'Dedicated Pest Control Backpack — no cross-contamination',targetPest:'Ants'}]},'Pest Control - Perimeter Granular + Liquid':{appSite:'Perimeter / Foundation',notes:'Granular band + liquid spray perimeter application.',products:[{product:'Talstar G Granular (Bifenthrin 0.2%)',activeIng:'Bifenthrin 0.2%',epa:'279-3336 (Talstar G)',rate:'2.3 lbs / 1000 sqft perimeter band',totalMixed:'Granular — record lbs applied',method:'Granular Hand-Spread — perimeter band',targetPest:'Ants'},{product:'Bifenthrin 7.9% (liquid)',activeIng:'Bifenthrin 7.9%',epa:'279-3206',rate:'0.34 gal / 1000 sqft',totalMixed:'Record gal applied',method:'Dedicated Pest Control Backpack — no cross-contamination',targetPest:'Ants'}]},'Pest Control - Perimeter Granular Bifenthrin Band':{appSite:'Perimeter / Foundation',notes:'Apply 10 ft out from foundation. Water in lightly.',products:[{product:'Granular Bifenthrin (Talstar PL or equivalent)',activeIng:'Bifenthrin 0.2%',epa:'279-3288 (Talstar PL)',rate:'2-3 lbs / 1000 sqft perimeter band',totalMixed:'Granular — record lbs applied',method:'Granular Hand-Spread — perimeter band',targetPest:'Ants'}]},'Pest Control - Perimeter Liquid Permethrin':{appSite:'Perimeter / Foundation',notes:'Dedicated backpack — no cross-contamination.',products:[{product:'Permethrin 36.8% (liquid concentrate)',activeIng:'Permethrin 36.8%',epa:'279-3097',rate:'0.34 gal / 1000 sqft',totalMixed:'Record gal applied',method:'Dedicated Pest Control Backpack — no cross-contamination',targetPest:'Ants'}]},'Pest Control - Perimeter Granular Talstar G':{appSite:'Perimeter / Foundation',notes:'Apply 10 ft out from foundation. Water in lightly.',products:[{product:'Talstar G Granular (Bifenthrin 0.2%)',activeIng:'Bifenthrin 0.2%',epa:'279-3336 (Talstar G)',rate:'2.3 lbs / 1000 sqft perimeter band',totalMixed:'Granular — record lbs applied',method:'Granular Hand-Spread — perimeter band',targetPest:'Ants'}]},'Yellow Jackets - Bifenthrin Liquid Spray':{appSite:'Nest Site - Structure',notes:'Apply at dusk. Full PPE.',products:[{product:'Bifenthrin 7.9% (liquid)',activeIng:'Bifenthrin 7.9%',epa:'279-3206',rate:'0.5-1 fl oz / gal water',totalMixed:'Record gal applied',method:'Dedicated Pest Control Backpack — no cross-contamination',targetPest:'Yellow Jackets'}]},'Yellow Jackets - Delta Dust (Deltamethrin)':{appSite:'Nest Site - Structure',notes:'Waterproof dust. Apply at dusk. Full PPE.',products:[{product:'Delta Dust',activeIng:'Deltamethrin 0.05%',epa:'432-772',rate:'2 oz per void',totalMixed:'Record oz dust used',method:'Dust Application — puff duster',targetPest:'Yellow Jackets'}]},'Yellow Jackets - Tempo Dust (Cyfluthrin)':{appSite:'Nest Site - Structure',notes:'Fast knockdown. Apply at dusk. Allow 48 hrs before sealing void.',products:[{product:'Tempo Dust',activeIng:'Cyfluthrin 1%',epa:'3125-491',rate:'0.5 oz per void',totalMixed:'Record oz dust used',method:'Dust Application — puff duster',targetPest:'Yellow Jackets'}]},'Yellow Jackets - PT Wasp-Freeze (Prallethrin)':{appSite:'Nest Site - Structure',notes:'Spray from 15+ ft. Full PPE.',products:[{product:'PT Wasp-Freeze II',activeIng:'Prallethrin 0.1%',epa:'499-507',rate:'Direct spray to nest',totalMixed:'Aerosol can — record cans used',method:'Aerosol / Direct — jet spray',targetPest:'Yellow Jackets'}]},'PHC - Insecticide (Bifenthrin Spray)':{appSite:'Entire Property',notes:'Thorough coverage including leaf undersides.',products:[{product:'Bifenthrin 7.9%',activeIng:'Bifenthrin 7.9%',epa:'279-3206',rate:'0.34 gal / 1000 sqft',totalMixed:'Record gal applied',method:'Dedicated PHC Backpack — no cross-contamination',targetPest:'Aphids'}]},'PHC - Insecticide (Imidacloprid Soil Drench)':{appSite:'Entire Property',notes:'Systemic soil drench. Apply spring for best uptake.',products:[{product:'Imidacloprid 2% (Imicide HP)',activeIng:'Imidacloprid 2%',epa:'5905-541',rate:'1-2 oz / inch DBH',totalMixed:'Mix per DBH',method:'Dedicated PHC Backpack — no cross-contamination',targetPest:'Scale Insects'}]},'PHC - Basal Bark (Imidacloprid)':{appSite:'Entire Property',notes:'Basal bark spray to 12" up trunk.',products:[{product:'Imidacloprid 2% (Imicide HP) — Basal Bark',activeIng:'Imidacloprid 2%',epa:'5905-541',rate:'1-2 oz / inch DBH in penetrant oil carrier',totalMixed:'Record oz applied',method:'Dedicated PHC Backpack — no cross-contamination',targetPest:'Borers'}]},'PHC - Miticide (Hexygon DF)':{appSite:'Entire Property',notes:'Rotate miticide classes.',products:[{product:'Hexygon DF',activeIng:'Hexythiazox 50%',epa:'432-1344',rate:'4-8 oz / 100 gal water',totalMixed:'Record gal applied',method:'Dedicated PHC Backpack — no cross-contamination',targetPest:'Mites'}]},'PHC - Miticide (Forbid 4F)':{appSite:'Entire Property',notes:'Rotate class. Do not apply above 90F.',products:[{product:'Forbid 4F',activeIng:'Spiromesifen 45.9%',epa:'264-840',rate:'2-4 fl oz / 100 gal water',totalMixed:'Record gal applied',method:'Dedicated PHC Backpack — no cross-contamination',targetPest:'Mites'}]},'PHC - Miticide (Avid 0.15EC)':{appSite:'Entire Property',notes:'Translaminar. Best on spider mites.',products:[{product:'Avid 0.15EC',activeIng:'Abamectin 0.15%',epa:'100-728',rate:'4-8 fl oz / 100 gal water',totalMixed:'Record gal applied',method:'Dedicated PHC Backpack — no cross-contamination',targetPest:'Mites'}]},'PHC - Miticide (Floramite SC)':{appSite:'Entire Property',notes:'Fast knockdown. Good rotation partner.',products:[{product:'Floramite SC',activeIng:'Bifenazate 22.6%',epa:'400-481',rate:'4-8 fl oz / 100 gal water',totalMixed:'Record gal applied',method:'Dedicated PHC Backpack — no cross-contamination',targetPest:'Mites'}]},'PHC - Fungicide (Chlorothalonil)':{appSite:'Entire Property',notes:'Contact/protectant fungicide. Reapply every 7-14 days.',products:[{product:'Chlorothalonil (Daconil / Generic)',activeIng:'Chlorothalonil 29.6%',epa:'60063-7',rate:'1.4-2.7 fl oz / gal water',totalMixed:'Record gal applied',method:'Dedicated PHC Backpack — no cross-contamination',targetPest:'Fungal Disease'}]},'PHC - Fungicide (Propiconazole)':{appSite:'Entire Property',notes:'Systemic fungicide. Rotate with contact fungicide.',products:[{product:'Propiconazole 14.3% (Banner MAXX / Generic)',activeIng:'Propiconazole 14.3%',epa:'100-741',rate:'1-4 fl oz / gal water',totalMixed:'Record gal applied',method:'Dedicated PHC Backpack — no cross-contamination',targetPest:'Fungal Disease'}]}};
+var DEFAULT_SV={'Lawn Care - Rd 1 (Fertilizer Only)':{appSite:'Full Lawn',notes:'Fertilizer only — no pesticide applied this round.',products:[{product:'Spring Valley Fertilizer (granular)',activeIng:'N/A — Fertilizer Only',epa:'N/A',rate:'4 lbs / 1000 sqft granular',totalMixed:'Granular — record bags used',method:'Z-Spray: Lavender AVI-110025 | 5 mph | 40 PSI | Spreader @ 4 lbs/1000 sqft',targetPest:'N/A — Fertility'}]},'Lawn Care - Rd 2A (12-0-0 w/ Prodiamine 0.38%)':{appSite:'Full Lawn',notes:'Crabgrass pre-emergent + fertilizer.',products:[{product:'Spring Valley 12-0-0 w/ Prodiamine 0.38%',activeIng:'Prodiamine 0.38%',epa:'Per bag label (Spring Valley / site one)',rate:'4 lbs / 1000 sqft granular',totalMixed:'Granular — record bags used',method:'Z-Spray: Lavender AVI-110025 | 5 mph | 40 PSI | Spreader @ 4 lbs/1000 sqft',targetPest:'Annual Grasses'}]},'Lawn Care - Rd 2B (13-0-5 w/ Dimension 0.13%)':{appSite:'Full Lawn',notes:'Crabgrass pre-emergent + fertilizer (13-0-5).',products:[{product:'Spring Valley 13-0-5 w/ Dimension (Dithiopyr) 0.13%',activeIng:'Dithiopyr 0.13%',epa:'Per bag label (Spring Valley / site one)',rate:'4 lbs / 1000 sqft granular',totalMixed:'Granular — record bags used',method:'Z-Spray: Lavender AVI-110025 | 5 mph | 40 PSI | Spreader @ 4 lbs/1000 sqft',targetPest:'Annual Grasses'}]},'Lawn Care - Rd 3 (Weed & Feed - Spring)':{appSite:'Full Lawn',notes:'Z-Spray spreads fert + sprays herbicide in one pass.',products:[{product:'Spring Valley Fertilizer (granular)',activeIng:'N/A — Fertilizer Only',epa:'N/A',rate:'4 lbs / 1000 sqft granular',totalMixed:'Granular — record bags used',method:'Z-Spray: Lavender AVI-110025 | 5 mph | 40 PSI | Spreader @ 4 lbs/1000 sqft',targetPest:'N/A — Fertility'},{product:'Strike 3 / 3-Way Herbicide',activeIng:'2,4-D + MCPP + Dicamba',epa:'228-397 (Strike 3 / 3-Way Generic)',rate:'0.34 gal / 1000 sqft spray output',totalMixed:'Liquid spray simultaneously with granular',method:'Z-Spray: Lavender AVI-110025 | 5 mph | 40 PSI | 0.34 gal/1000 sqft',targetPest:'Broadleaf Weeds'}]},'Lawn Care - Rd 4 (Spring Valley Fertilizer)':{appSite:'Full Lawn',notes:'Fertilizer only. No pesticide applied.',products:[{product:'Spring Valley Fertilizer (granular)',activeIng:'N/A — Fertilizer Only',epa:'N/A',rate:'4 lbs / 1000 sqft granular',totalMixed:'Granular — record bags used',method:'Z-Spray: Lavender AVI-110025 | 5 mph | 40 PSI | Spreader @ 4 lbs/1000 sqft',targetPest:'N/A — Fertility'}]},'Lawn Care - Rd 5 (15-0-3 Protego Ima-Lambda)':{appSite:'Full Lawn',notes:'Water in 24-48 hrs.',products:[{product:'Spring Valley 15-0-3 Protego Ima-Lambda',activeIng:'Imidacloprid + Lambda-Cyhalothrin',epa:'Per bag label (Spring Valley 15-0-3 Protego)',rate:'4 lbs / 1000 sqft granular',totalMixed:'Granular — record bags used',method:'Z-Spray: Lavender AVI-110025 | 5 mph | 40 PSI | Spreader @ 4 lbs/1000 sqft',targetPest:'Grubs (White Grub)'}]},'Lawn Care - Rd 6 (Tenacity + Bifenthrin Tank Mix)':{appSite:'Full Lawn',notes:'Tank mix + NIS surfactant.',products:[{product:'Tenacity (Mesotrione 40%)',activeIng:'Mesotrione 40%',epa:'100-1139 (Tenacity)',rate:'1 fl oz / 1000 sqft',totalMixed:'Record gal mixed',method:'Z-Spray: Lavender AVI-110025 | 5 mph | 40 PSI | 0.34 gal/1000 sqft',targetPest:'Crabgrass'},{product:'Bifenthrin 7.9% (liquid)',activeIng:'Bifenthrin 7.9%',epa:'279-3206',rate:'0.34 gal / 1000 sqft',totalMixed:'Record gal mixed',method:'Z-Spray: Lavender AVI-110025 | 5 mph | 40 PSI | 0.34 gal/1000 sqft',targetPest:'Surface Insects'}]},'Lawn Care - Rd 7 (Fall Weed & Feed)':{appSite:'Full Lawn',notes:'Target actively growing broadleaf weeds before frost.',products:[{product:'Spring Valley Fertilizer (granular)',activeIng:'N/A — Fertilizer Only',epa:'N/A',rate:'4 lbs / 1000 sqft granular',totalMixed:'Granular — record bags used',method:'Z-Spray: Lavender AVI-110025 | 5 mph | 40 PSI | Spreader @ 4 lbs/1000 sqft',targetPest:'N/A — Fertility'},{product:'Strike 3 / 3-Way Herbicide',activeIng:'2,4-D + MCPP + Dicamba',epa:'228-397 (Strike 3 / 3-Way Generic)',rate:'0.34 gal / 1000 sqft output',totalMixed:'Granular broadcast + liquid spray simultaneously',method:'Z-Spray: Lavender AVI-110025 | 5 mph | 40 PSI | Spreader @ 4 lbs/1000 sqft',targetPest:'Broadleaf Weeds'}]},'Lawn Care - Rd 8 (Winterizer)':{appSite:'Full Lawn',notes:'High bio winterizer.',products:[{product:'High Bio Winterizer Fertilizer (high K)',activeIng:'N/A — Fertilizer Only',epa:'N/A',rate:'4 lbs / 1000 sqft granular',totalMixed:'Granular — record bags used',method:'Z-Spray: Lavender AVI-110025 | 5 mph | 40 PSI | Spreader @ 4 lbs/1000 sqft',targetPest:'N/A — Fertility'}]},'Lawn Care - Nutsedge (Sledgehammer)':{appSite:'Full Lawn',notes:'Add NIS surfactant. Reapply in 6-10 weeks if regrowth.',products:[{product:'Sledgehammer (Halosulfuron-methyl 75%)',activeIng:'Halosulfuron-methyl 75%',epa:'62719-542',rate:'1.33 oz / 1000 sqft',totalMixed:'Record gal mixed',method:'Z-Spray: Lavender AVI-110025 | 5 mph | 40 PSI | 0.34 gal/1000 sqft',targetPest:'Nutsedge'}]},'Lime Treatment (Sol-U-Cal)':{appSite:'Full Lawn',notes:'Soil amendment only — raises pH.',products:[{product:'Sol-U-Cal Liquid Lime',activeIng:'Calcium Carbonate (Soluble) — Soil Amendment',epa:'N/A — Soil Amendment',rate:'0.34 gal / 1000 sqft',totalMixed:'Record gal applied',method:'Z-Spray: Lavender AVI-110025 | 5 mph | 40 PSI | 0.34 gal/1000 sqft',targetPest:'N/A — pH Correction'}]},'Pest Control - Perimeter Liquid Bifenthrin':{appSite:'Perimeter / Foundation',notes:'Liquid perimeter spray — foundation, eaves, entry points.',products:[{product:'Bifenthrin 7.9% (liquid)',activeIng:'Bifenthrin 7.9%',epa:'279-3206',rate:'0.5-1 fl oz / gal water',totalMixed:'Record gal applied',method:'Dedicated Pest Control Backpack — no cross-contamination',targetPest:'Ants'}]},'Pest Control - Perimeter Granular + Liquid':{appSite:'Perimeter / Foundation',notes:'Granular band + liquid spray perimeter application.',products:[{product:'Talstar G Granular (Bifenthrin 0.2%)',activeIng:'Bifenthrin 0.2%',epa:'279-3336 (Talstar G)',rate:'2.3 lbs / 1000 sqft perimeter band',totalMixed:'Granular — record lbs applied',method:'Granular Hand-Spread — perimeter band',targetPest:'Ants'},{product:'Bifenthrin 7.9% (liquid)',activeIng:'Bifenthrin 7.9%',epa:'279-3206',rate:'0.34 gal / 1000 sqft',totalMixed:'Record gal applied',method:'Dedicated Pest Control Backpack — no cross-contamination',targetPest:'Ants'}]},'Pest Control - Perimeter Granular Bifenthrin Band':{appSite:'Perimeter / Foundation',notes:'Apply 10 ft out from foundation. Water in lightly.',products:[{product:'Granular Bifenthrin (Talstar PL or equivalent)',activeIng:'Bifenthrin 0.2%',epa:'279-3288 (Talstar PL)',rate:'2-3 lbs / 1000 sqft perimeter band',totalMixed:'Granular — record lbs applied',method:'Granular Hand-Spread — perimeter band',targetPest:'Ants'}]},'Pest Control - Perimeter Liquid Permethrin':{appSite:'Perimeter / Foundation',notes:'Dedicated backpack — no cross-contamination.',products:[{product:'Permethrin 36.8% (liquid concentrate)',activeIng:'Permethrin 36.8%',epa:'279-3097',rate:'0.34 gal / 1000 sqft',totalMixed:'Record gal applied',method:'Dedicated Pest Control Backpack — no cross-contamination',targetPest:'Ants'}]},'Pest Control - Perimeter Granular Talstar G':{appSite:'Perimeter / Foundation',notes:'Apply 10 ft out from foundation. Water in lightly.',products:[{product:'Talstar G Granular (Bifenthrin 0.2%)',activeIng:'Bifenthrin 0.2%',epa:'279-3336 (Talstar G)',rate:'2.3 lbs / 1000 sqft perimeter band',totalMixed:'Granular — record lbs applied',method:'Granular Hand-Spread — perimeter band',targetPest:'Ants'}]},'Yellow Jackets - Bifenthrin Liquid Spray':{appSite:'Nest Site - Structure',notes:'Apply at dusk. Full PPE.',products:[{product:'Bifenthrin 7.9% (liquid)',activeIng:'Bifenthrin 7.9%',epa:'279-3206',rate:'0.5-1 fl oz / gal water',totalMixed:'Record gal applied',method:'Dedicated Pest Control Backpack — no cross-contamination',targetPest:'Yellow Jackets'}]},'Yellow Jackets - Delta Dust (Deltamethrin)':{appSite:'Nest Site - Structure',notes:'Waterproof dust. Apply at dusk. Full PPE.',products:[{product:'Delta Dust',activeIng:'Deltamethrin 0.05%',epa:'432-772',rate:'2 oz per void',totalMixed:'Record oz dust used',method:'Dust Application — puff duster',targetPest:'Yellow Jackets'}]},'Yellow Jackets - Tempo Dust (Cyfluthrin)':{appSite:'Nest Site - Structure',notes:'Fast knockdown. Apply at dusk. Allow 48 hrs before sealing void.',products:[{product:'Tempo Dust',activeIng:'Cyfluthrin 1%',epa:'3125-491',rate:'0.5 oz per void',totalMixed:'Record oz dust used',method:'Dust Application — puff duster',targetPest:'Yellow Jackets'}]},'Yellow Jackets - PT Wasp-Freeze (Prallethrin)':{appSite:'Nest Site - Structure',notes:'Spray from 15+ ft. Full PPE.',products:[{product:'PT Wasp-Freeze II',activeIng:'Prallethrin 0.1%',epa:'499-507',rate:'Direct spray to nest',totalMixed:'Aerosol can — record cans used',method:'Aerosol / Direct — jet spray',targetPest:'Yellow Jackets'}]},'PHC - Insecticide (Bifenthrin Spray)':{appSite:'Entire Property',notes:'Thorough coverage including leaf undersides.',products:[{product:'Bifenthrin 7.9%',activeIng:'Bifenthrin 7.9%',epa:'279-3206',rate:'0.34 gal / 1000 sqft',totalMixed:'Record gal applied',method:'Dedicated PHC Backpack — no cross-contamination',targetPest:'Aphids'}]},'PHC - Insecticide (Imidacloprid Soil Drench)':{appSite:'Entire Property',notes:'Systemic soil drench. Apply spring for best uptake.',products:[{product:'Imidacloprid 2% (Imicide HP)',activeIng:'Imidacloprid 2%',epa:'5905-541',rate:'1-2 oz / inch DBH',totalMixed:'Mix per DBH',method:'Dedicated PHC Backpack — no cross-contamination',targetPest:'Scale Insects'}]},'PHC - Basal Bark (Imidacloprid)':{appSite:'Entire Property',notes:'Basal bark spray to 12" up trunk.',products:[{product:'Imidacloprid 2% (Imicide HP) — Basal Bark',activeIng:'Imidacloprid 2%',epa:'5905-541',rate:'1-2 oz / inch DBH in penetrant oil carrier',totalMixed:'Record oz applied',method:'Dedicated PHC Backpack — no cross-contamination',targetPest:'Borers'}]},'PHC - Miticide (Hexygon DF)':{appSite:'Entire Property',notes:'Rotate miticide classes.',products:[{product:'Hexygon DF',activeIng:'Hexythiazox 50%',epa:'432-1344',rate:'4-8 oz / 100 gal water',totalMixed:'Record gal applied',method:'Dedicated PHC Backpack — no cross-contamination',targetPest:'Mites'}]},'PHC - Miticide (Forbid 4F)':{appSite:'Entire Property',notes:'Rotate class. Do not apply above 90F.',products:[{product:'Forbid 4F',activeIng:'Spiromesifen 45.9%',epa:'264-840',rate:'2-4 fl oz / 100 gal water',totalMixed:'Record gal applied',method:'Dedicated PHC Backpack — no cross-contamination',targetPest:'Mites'}]},'PHC - Miticide (Avid 0.15EC)':{appSite:'Entire Property',notes:'Translaminar. Best on spider mites.',products:[{product:'Avid 0.15EC',activeIng:'Abamectin 0.15%',epa:'100-728',rate:'4-8 fl oz / 100 gal water',totalMixed:'Record gal applied',method:'Dedicated PHC Backpack — no cross-contamination',targetPest:'Mites'}]},'PHC - Miticide (Floramite SC)':{appSite:'Entire Property',notes:'Fast knockdown. Good rotation partner.',products:[{product:'Floramite SC',activeIng:'Bifenazate 22.6%',epa:'400-481',rate:'4-8 fl oz / 100 gal water',totalMixed:'Record gal applied',method:'Dedicated PHC Backpack — no cross-contamination',targetPest:'Mites'}]},'PHC - Fungicide (Chlorothalonil)':{appSite:'Entire Property',notes:'Contact/protectant fungicide. Reapply every 7-14 days.',products:[{product:'Chlorothalonil (Daconil / Generic)',activeIng:'Chlorothalonil 29.6%',epa:'60063-7',rate:'1.4-2.7 fl oz / gal water',totalMixed:'Record gal applied',method:'Dedicated PHC Backpack — no cross-contamination',targetPest:'Fungal Disease'}]},'PHC - Fungicide (Propiconazole)':{appSite:'Entire Property',notes:'Systemic fungicide. Rotate with contact fungicide.',products:[{product:'Propiconazole 14.3% (Banner MAXX / Generic)',activeIng:'Propiconazole 14.3%',epa:'100-741',rate:'1-4 fl oz / gal water',totalMixed:'Record gal applied',method:'Dedicated PHC Backpack — no cross-contamination',targetPest:'Fungal Disease'}]},
+'Bare Ground - Non-Selective (Glyphosate)':{appSite:'Bare Ground / Target Area',notes:'Non-selective herbicide. Do not apply near desirable plants or water. Allow 24-48 hrs before rain.',products:[{product:'Glyphosate 41% (Roundup Pro or Generic)',activeIng:'Glyphosate 41%',epa:'524-475',rate:'2-3 fl oz / gal water | 0.34 gal / 1000 sqft output',totalMixed:'Record gal mixed',method:'Backpack sprayer — direct application',targetPest:'All Vegetation'}]},
+'Bare Ground - Pre-Emergent':{appSite:'Bare Ground / Target Area',notes:'Pre-emergent for bare ground areas. Apply before weed germination.',products:[{product:'Preen / Pendimethalin 3.8%',activeIng:'Pendimethalin 3.8%',epa:'241-341',rate:'2-3 lbs / 1000 sqft granular',totalMixed:'Granular — record bags used',method:'Granular spreader — even coverage',targetPest:'Annual Grasses / Broadleaf Weeds'}]}};
 
 // ── STATE ────────────────────────────────────────────────────────
 var queue   = JSON.parse(localStorage.getItem('pda_q') || '[]');
@@ -518,22 +539,33 @@ function calcTotal(rate, sqFt) {
 }
 
 function updateTotalsPreview() {
-  var svc = document.getElementById('sSel').value;
-  var sqFt = document.getElementById('sqIn').value.trim();
-  var box = document.getElementById('totPreview');
-  var vals = document.getElementById('totPreviewVals');
-  if (!svc || !SV[svc] || !sqFt) { box.style.display='none'; return; }
-  var d = SV[svc];
-  var lines = d.products.map(function(p, i) {
-    var t = calcTotal(p.rate, sqFt);
-    if (!t) return '';
-    return (d.products.length > 1 ? p.product + ': ' : '') + t;
-  }).filter(Boolean);
-  if (lines.length) {
-    vals.textContent = lines.join(' | ');
-    box.style.display = 'block';
+  var svc=document.getElementById('sSel').value;
+  var box=document.getElementById('totPreview');
+  var vals=document.getElementById('totPreviewVals');
+  if(!box||!vals) return;
+  if(!svc||!SV[svc]){box.style.display='none';return;}
+  var sqFt='';
+  if(sprayMode==='spot'){
+    var sp=document.getElementById('spotSqIn');
+    sqFt=sp?sp.value.trim():'';
   } else {
-    box.style.display = 'none';
+    var cat=getSvcCat(svc);
+    var sqIds={lawn:'sqLawn',phc:'sqPHC',pest:'sqPest',aquatic:'sqAquatic',bare:'sqLawn'};
+    var el=document.getElementById(sqIds[cat]||'sqLawn');
+    sqFt=el?el.value.trim():'';
+  }
+  if(!sqFt){box.style.display='none';return;}
+  var d=SV[svc];
+  var lines=d.products.map(function(p,i){
+    var t=calcTotal(p.rate,sqFt);
+    if(!t) return '';
+    return (d.products.length>1?p.product+': ':'')+t;
+  }).filter(Boolean);
+  if(lines.length){
+    vals.textContent=lines.join(' | ');
+    box.style.display='block';
+  } else {
+    box.style.display='none';
   }
 }
 
@@ -544,7 +576,39 @@ function getSvcCat(svcName){
   if(n.indexOf('phc')===0) return 'phc';
   if(n.indexOf('pest')===0) return 'pest';
   if(n.indexOf('aquatic')===0||n.indexOf('pond')===0||n.indexOf('creek')===0) return 'aquatic';
+  if(n.indexOf('bare ground')===0||n.indexOf('bare-ground')===0) return 'bare';
   return 'lawn'; // default
+}
+
+var sprayMode="full";
+function setSprayMode(mode){
+  sprayMode = mode;
+  var btnFull = document.getElementById('btnFullLawn');
+  var btnSpot = document.getElementById('btnSpotSpray');
+  var spotFld = document.getElementById('spotSqFld');
+  var sqCatFlds = document.getElementById('sqCatFlds');
+  if(mode === 'spot'){
+    btnFull.style.background='var(--sur)';btnFull.style.color='var(--dim)';btnFull.style.borderColor='var(--bdr)';
+    btnSpot.style.background='var(--gdim)';btnSpot.style.color='#fff';btnSpot.style.borderColor='var(--gdim)';
+    spotFld.style.display='block';
+    sqCatFlds.style.display='none';
+  } else {
+    btnFull.style.background='var(--gdim)';btnFull.style.color='#fff';btnFull.style.borderColor='var(--gdim)';
+    btnSpot.style.background='var(--sur)';btnSpot.style.color='var(--dim)';btnSpot.style.borderColor='var(--bdr)';
+    spotFld.style.display='none';
+    sqCatFlds.style.display='block';
+  }
+  updateTotalsPreview();
+}
+
+function showSprayToggle(show){
+  var t = document.getElementById('sprayToggle');
+  if(t) t.style.display = show ? 'flex' : 'none';
+  if(!show){
+    setSprayMode('full');
+    var sf=document.getElementById('spotSqFld');
+    if(sf) sf.style.display='none';
+  }
 }
 function getCustSq(name, cat){
   var c = custDB.find(function(x){return x.name===name;});
@@ -716,15 +780,25 @@ function onSqCatType(cat){
   updateTotalsPreview();
 }
 function onSvc(){var s=document.getElementById('sSel').value;var card=document.getElementById('pcard'),grid=document.getElementById('pgrd'),note=document.getElementById('multiNote');if(!s||!SV[s]){card.classList.remove('show');return;}var d=SV[s];grid.innerHTML=[['Product',jn(d.products,'product')],['Active Ing',jn(d.products,'activeIng')],['EPA Reg #',jn(d.products,'epa')],['Rate',jn(d.products,'rate')],['Method',jn(d.products,'method')],['Target Pest',jn(d.products,'targetPest')],['App Site',d.appSite]].map(function(kv){return'<span class="pk">'+kv[0]+'</span><span class="pv">'+kv[1]+'</span>';}).join('');note.innerHTML=d.products.length>1?'<div class="multi-note">⚡ '+d.products.length+' products — combined into 1 log entry</div>':'';card.classList.add('show');populateSiteDropdown(d.appSite);
-  // Show correct sq ft field for this service category
+  // Show correct sq ft field + spray toggle for lawn/bare ground services
   var custName=document.getElementById('cSel').value;
-  if(custName) showSqForCat(custName, getSvcCat(s));
+  var cat=getSvcCat(s);
+  var sprayable = (cat==='lawn'||cat==='bare'||cat==='pest');
+  showSprayToggle(sprayable);
+  if(sprayMode==='full'&&custName) showSqForCat(custName, cat);
   updateTotalsPreview();}
 function addEntry(){var cust=document.getElementById('cSel').value;var svc=document.getElementById('sSel').value;if(!cust){toast('⚠ Select a customer');return;}if(!svc){toast('⚠ Select a service');return;}clock();var d=SV[svc];var svcCat=getSvcCat(svc);
-  var sqIds={lawn:'sqLawn',phc:'sqPHC',pest:'sqPest',aquatic:'sqAquatic'};
+  var sqIds={lawn:'sqLawn',phc:'sqPHC',pest:'sqPest',aquatic:'sqAquatic',bare:'sqLawn'};
   var sqEl=document.getElementById(sqIds[svcCat]||'sqLawn');
-  var sqFt=sqEl?sqEl.value.trim():'';var sv=document.getElementById('siteOv').value;var appSite=(sv&&sv!=='Use service default')?sv:d.appSite;var userN=document.getElementById('nts').value.trim();var wxTemp=document.getElementById('wxT').value;var combined={product:jn(d.products,'product'),activeIng:jn(d.products,'activeIng'),epa:jn(d.products,'epa'),rate:jn(d.products,'rate'),totalMixed:jn(d.products,'totalMixed'),method:jn(d.products,'method'),targetPest:jn(d.products,'targetPest')};var totals=d.products.map(function(p){return calcTotal(p.rate,sqFt);}).filter(Boolean);var tu=totals.join(' + ')||'';var entry={id:Date.now(),customer:cust,service:svc,date:document.getElementById('aDate').textContent,time:document.getElementById('aTime').textContent,sqFt:sqFt,totalUsed:tu,weather:document.getElementById('wxC').value,temp:wxTemp?(wxTemp+'°F'):'',wind:document.getElementById('wxW').value,product:combined.product,activeIng:combined.activeIng,epa:combined.epa,rate:combined.rate,totalMixed:combined.totalMixed,method:combined.method,targetPest:combined.targetPest,appSite:appSite,notes:userN?d.notes+' | '+userN:d.notes,synced:false};queue.push(entry);saveQ();renderLog();syncEntry(entry);toast('✓ Added to log');document.getElementById('cSel').value='';document.getElementById('sSel').value='';['sqLawn','sqPHC','sqPest','sqAquatic'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});hideSqFlds();document.getElementById('siteOv').value='';document.getElementById('nts').value='';document.getElementById('pcard').classList.remove('show');document.getElementById('sqFld').className='fld';document.getElementById('sqLbl').textContent='LAWN SQ FT';document.getElementById('sqIn').style.cssText='';document.getElementById('totPreview').style.display='none';goTab('log');}
-function eRow(e){return[e.date,e.time,e.customer,e.sqFt,e.service,e.product,e.activeIng,e.epa,e.targetPest,e.appSite,e.method,e.rate,e.totalMixed,e.sqFt,e.totalUsed,e.weather,e.wind,e.temp,e.notes,'Devon Alleman','608542 / BU 14521'];}
+  var sqFt=sqEl?sqEl.value.trim():'';
+  var spotSqFt='';
+  if(sprayMode==='spot'){
+    var spotEl=document.getElementById('spotSqIn');
+    spotSqFt=spotEl?spotEl.value.trim():'';
+  }
+  // For product calculation, use spot sq ft if in spot mode
+  var calcSqFt=sprayMode==='spot'?spotSqFt:sqFt;var sv=document.getElementById('siteOv').value;var appSite=(sv&&sv!=='Use service default')?sv:d.appSite;var userN=document.getElementById('nts').value.trim();var wxTemp=document.getElementById('wxT').value;var combined={product:jn(d.products,'product'),activeIng:jn(d.products,'activeIng'),epa:jn(d.products,'epa'),rate:jn(d.products,'rate'),totalMixed:jn(d.products,'totalMixed'),method:jn(d.products,'method'),targetPest:jn(d.products,'targetPest')};var totals=d.products.map(function(p){return calcTotal(p.rate,calcSqFt);}).filter(Boolean);var tu=totals.join(' + ')||'';var entry={id:Date.now(),customer:cust,service:svc,date:document.getElementById('aDate').textContent,time:document.getElementById('aTime').textContent,sqFt:sqFt,spotSqFt:spotSqFt,totalUsed:tu,weather:document.getElementById('wxC').value,temp:wxTemp?(wxTemp+'°F'):'',wind:document.getElementById('wxW').value,product:combined.product,activeIng:combined.activeIng,epa:combined.epa,rate:combined.rate,totalMixed:combined.totalMixed,method:combined.method,targetPest:combined.targetPest,appSite:appSite,notes:userN?d.notes+' | '+userN:d.notes,synced:false};queue.push(entry);saveQ();renderLog();syncEntry(entry);toast('✓ Added to log');document.getElementById('cSel').value='';document.getElementById('sSel').value='';['sqLawn','sqPHC','sqPest','sqAquatic'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});hideSqFlds();showSprayToggle(false);var sp=document.getElementById('spotSqIn');if(sp)sp.value='';document.getElementById('siteOv').value='';document.getElementById('nts').value='';document.getElementById('pcard').classList.remove('show');document.getElementById('sqFld').className='fld';document.getElementById('sqLbl').textContent='LAWN SQ FT';document.getElementById('sqIn').style.cssText='';document.getElementById('totPreview').style.display='none';goTab('log');}
+function eRow(e){return[e.date,e.time,e.customer,e.sqFt,e.service,e.product,e.activeIng,e.epa,e.targetPest,e.appSite,e.method,e.rate,e.totalMixed,e.sqFt,e.totalUsed,e.spotSqFt||'',e.weather,e.wind,e.temp,e.notes,'Devon Alleman','608542 / BU 14521'];}
 function getTab(){var n=new Date();return n.toLocaleDateString('en-US',{month:'short',year:'numeric'}).replace(' ','_');}
 function renderLog(){var list=document.getElementById('logList'),empty=document.getElementById('logEmpty'),bar=document.getElementById('ebar'),bdg=document.getElementById('logBdg'),cnt=document.getElementById('eCnt');bdg.textContent=queue.length;bdg.className='bdg'+(queue.length?' show':'');cnt.textContent=queue.length+' entr'+(queue.length===1?'y':'ies')+' today';if(!queue.length){empty.style.display='block';list.innerHTML='';bar.className='ebar';return;}empty.style.display='none';bar.className='ebar show';list.innerHTML=queue.map(function(e,i){return'<div class="qi"><div class="qi-body'+(e.synced?'':' pend')+'">'+'<div class="qi-top"><div class="qi-name">'+e.customer+'</div><div style="display:flex;align-items:center;gap:5px"><span class="qi-time">'+e.time+'</span>'+(e.synced?'':'<button class="btn-del" onclick="removeEntry('+i+')">×</button>')+'</div></div>'+'<div class="qi-svc">'+e.service+'</div>'+'<div class="qi-pills"><span class="qp g">'+e.date+'</span><span class="qp'+(e.weather?'':' y')+'">'+(e.weather||'No weather')+'</span><span class="qp">'+(e.temp||'—')+'</span><span class="qp">'+e.appSite+'</span>'+(e.synced?'<span class="qp g">☁ synced</span>':'<span class="qp y">⏳ pending</span>')+'</div>'+(e.totalUsed?'<div style="font-size:11px;font-family:var(--mono);color:var(--grn);margin-bottom:8px">Total used: '+e.totalUsed+'</div>':'')+'<div class="qi-sq"><label>SQ FT:</label><input class="sq-inp'+(e.sqFt?' sv':'')+'" type="number" value="'+(e.sqFt||'')+'" placeholder="enter sq ft" onchange="updateSq('+i+',this)"><span class="flash" id="sf-'+i+'">✓</span></div>'+'</div></div>';}).join('');}
 function updateSq(i,el){var val=el.value.trim();queue[i].sqFt=val;var ci=custDB.findIndex(function(c){return c.name===queue[i].customer;});if(ci>=0&&val){custDB[ci].sqFt=val;saveC();renderCusts();}saveQ();el.className='sq-inp'+(val?' sv':'');var f=document.getElementById('sf-'+i);if(f){f.className='flash show';setTimeout(function(){f.className='flash';},2000);}}
@@ -829,12 +903,14 @@ function populateMonthDropdown(){
     months[k]=moL(p[0],p[2]);
   });
   var keys=Object.keys(months).sort().reverse();
-  var cur=sel.value;
+  var cur=sel.value||'';
   sel.innerHTML='<option value="">All Months</option>'
     +keys.map(function(k){return'<option value="'+k+'"'+(k===cur?' selected':'')+'>'+months[k]+'</option>';}).join('');
-  // Hide month selector unless period is month
+  // Show/hide month selector based on period
   var period=document.getElementById('totPer').value;
-  sel.parentElement.style.display=(period==='month'||period==='all')?'flex':'none';
+  var monthLabel=document.getElementById('totMonthLabel');
+  if(monthLabel) monthLabel.style.display=(period==='month'||period==='all')?'':'none';
+  sel.style.display=(period==='month'||period==='all')?'':'none';
 }
 
 
@@ -896,10 +972,23 @@ function renderCusts(){
   }).join('');
 }
 function sqField(label,val,idx,cat){
-  return '<div style="background:var(--sur2);border:1px solid var(--bdr);border-radius:7px;padding:5px 8px">'
+  // Only show if has value, or show as compact add button
+  if(val){
+    return '<div style="background:var(--sur2);border:1px solid var(--gdim);border-radius:7px;padding:5px 8px">'
+      +'<div style="font-size:9px;font-family:var(--mono);color:var(--mut);margin-bottom:2px">'+label+'</div>'
+      +'<input type="number" style="width:100%;background:transparent;border:none;outline:none;font-size:12px;font-family:var(--mono);color:var(--grn)" '
+      +'value="'+val+'" onchange="uCSqCat('+idx+',this,\''+cat+'\')">'      +'</div>';
+  }
+  return '<div style="background:var(--sur2);border:1px dashed var(--mut);border-radius:7px;padding:5px 8px;cursor:pointer;text-align:center" '
+    +'onclick="expandSqField(this,'+idx+',\''+cat+'\',\''+label+'\')">'
+    +'<div style="font-size:9px;font-family:var(--mono);color:var(--mut)">+ '+label+'</div>'
+    +'</div>';
+}
+function expandSqField(el,idx,cat,label){
+  el.outerHTML='<div style="background:var(--sur2);border:1px solid var(--gdim);border-radius:7px;padding:5px 8px">'
     +'<div style="font-size:9px;font-family:var(--mono);color:var(--mut);margin-bottom:2px">'+label+'</div>'
-    +'<input type="number" style="width:100%;background:transparent;border:none;outline:none;font-size:12px;font-family:var(--mono);color:'+(val?'var(--grn)':'var(--txt)')+'" '
-    +'value="'+(val||'')+'" placeholder="-" onchange="uCSqCat('+idx+',this,\'' + cat + '\')">'
+    +'<input type="number" style="width:100%;background:transparent;border:none;outline:none;font-size:12px;font-family:var(--mono);color:var(--txt)" '
+    +'placeholder="enter sq ft" onchange="uCSqCat('+idx+',this,\''+cat+'\')" autofocus>'
     +'</div>';
 }
 function uCSq(idx,el){
@@ -977,8 +1066,48 @@ function dC(idx){
     });
   }
 }
-function renderProds(){var q=(document.getElementById('prodQ')||{value:''}).value.toLowerCase();var keys=Object.keys(SV).filter(function(k){return k.toLowerCase().indexOf(q)>=0;});document.getElementById('prodMeta').textContent=keys.length+' of '+Object.keys(SV).length+' services';var cats={'Lawn Care':[],'Lime':[],'Pest Control':[],'Yellow Jackets':[],'PHC':[],'Aquatic':[],'Other':[]};keys.forEach(function(k){if(k.indexOf('Lawn')===0)cats['Lawn Care'].push(k);else if(k.indexOf('Lime')===0)cats['Lime'].push(k);else if(k.indexOf('Pest')===0)cats['Pest Control'].push(k);else if(k.indexOf('Yellow')===0)cats['Yellow Jackets'].push(k);else if(k.indexOf('PHC')===0)cats['PHC'].push(k);else if(k.indexOf('Aquatic')===0||k.indexOf('Pond')===0||k.indexOf('Creek')===0)cats['Aquatic'].push(k);else cats['Other'].push(k);});var html='';Object.keys(cats).forEach(function(cat){if(!cats[cat].length)return;html+='<div class="cat-hdr">'+cat+'</div>';cats[cat].forEach(function(k){var d=SV[k];var pid=btoa(encodeURIComponent(k));html+='<div class="prod-item"><div class="prod-hdr" onclick="tProd(\''+pid+'\')">'+'<div class="prod-title"><div class="prod-name">'+k+'</div><div class="prod-sub">'+d.products.map(function(p){return p.product;}).join(' + ')+'</div>'+(d.products.length>1?'<span class="prod-multi">'+d.products.length+' products</span>':'')+'</div><div class="prod-actions"><button class="btn-sm" onclick="event.stopPropagation();openEditSvc(\''+pid+'\')">Edit</button><button class="btn-del" onclick="event.stopPropagation();deleteSvc(\''+pid+'\')">×</button></div></div>'+'<div class="prod-body" id="pb-'+pid+'">'+d.products.map(function(p,i){return'<div class="sub-prod">'+(d.products.length>1?'<div class="sub-prod-num">Product '+(i+1)+'</div>':'')+'<div class="pgrd"><span class="pk">Product</span><span class="pv">'+p.product+'</span><span class="pk">Active Ing</span><span class="pv">'+p.activeIng+'</span><span class="pk">EPA Reg #</span><span class="pv">'+p.epa+'</span><span class="pk">Rate</span><span class="pv">'+p.rate+'</span><span class="pk">Method</span><span class="pv">'+p.method+'</span><span class="pk">Target Pest</span><span class="pv">'+p.targetPest+'</span></div></div>';}).join('')+'</div></div>';});});document.getElementById('prodList').innerHTML=html;}
+function renderProds(){var q=(document.getElementById('prodQ')||{value:''}).value.toLowerCase();var keys=Object.keys(SV).filter(function(k){return k.toLowerCase().indexOf(q)>=0;});document.getElementById('prodMeta').textContent=keys.length+' of '+Object.keys(SV).length+' services';var customCats=getCustomCategories();var cats={'Lawn Care':[],'Lime':[],'Pest Control':[],'Yellow Jackets':[],'PHC':[],'Aquatic':[],'Bare Ground':[]};customCats.forEach(function(c){cats[c]=[];});cats['Other']=[];keys.forEach(function(k){
+    if(k.indexOf('Lawn')===0) cats['Lawn Care'].push(k);
+    else if(k.indexOf('Lime')===0) cats['Lime'].push(k);
+    else if(k.indexOf('Pest')===0) cats['Pest Control'].push(k);
+    else if(k.indexOf('Yellow')===0) cats['Yellow Jackets'].push(k);
+    else if(k.indexOf('PHC')===0) cats['PHC'].push(k);
+    else if(k.indexOf('Aquatic')===0||k.indexOf('Pond')===0||k.indexOf('Creek')===0) cats['Aquatic'].push(k);
+    else if(k.indexOf('Bare Ground')===0||k.indexOf('Bare-Ground')===0) cats['Bare Ground'].push(k);
+    else {
+      var found=false;
+      customCats.forEach(function(c){if(k.indexOf(c)===0){cats[c].push(k);found=true;}});
+      if(!found) cats['Other'].push(k);
+    }
+  });var html='';Object.keys(cats).forEach(function(cat){if(!cats[cat].length)return;var isCustom=customCats.indexOf(cat)>=0;
+    html+='<div class="cat-hdr" style="display:flex;justify-content:space-between;align-items:center">'+cat
+      +(isCustom?'<button class="btn-del" style="font-size:12px" onclick="deleteCustomCategory(\''+cat+'\')" title="Delete category">×</button>':'')
+      +'</div>';cats[cat].forEach(function(k){var d=SV[k];var pid=btoa(encodeURIComponent(k));html+='<div class="prod-item"><div class="prod-hdr" onclick="tProd(\''+pid+'\')">'+'<div class="prod-title"><div class="prod-name">'+k+'</div><div class="prod-sub">'+d.products.map(function(p){return p.product;}).join(' + ')+'</div>'+(d.products.length>1?'<span class="prod-multi">'+d.products.length+' products</span>':'')+'</div><div class="prod-actions"><button class="btn-sm" onclick="event.stopPropagation();openEditSvc(\''+pid+'\')">Edit</button><button class="btn-del" onclick="event.stopPropagation();deleteSvc(\''+pid+'\')">×</button></div></div>'+'<div class="prod-body" id="pb-'+pid+'">'+d.products.map(function(p,i){return'<div class="sub-prod">'+(d.products.length>1?'<div class="sub-prod-num">Product '+(i+1)+'</div>':'')+'<div class="pgrd"><span class="pk">Product</span><span class="pv">'+p.product+'</span><span class="pk">Active Ing</span><span class="pv">'+p.activeIng+'</span><span class="pk">EPA Reg #</span><span class="pv">'+p.epa+'</span><span class="pk">Rate</span><span class="pv">'+p.rate+'</span><span class="pk">Method</span><span class="pv">'+p.method+'</span><span class="pk">Target Pest</span><span class="pv">'+p.targetPest+'</span></div></div>';}).join('')+'</div></div>';});});document.getElementById('prodList').innerHTML=html;}
 function tProd(pid){document.getElementById('pb-'+pid).classList.toggle('open');}
+function getCustomCategories(){
+  return JSON.parse(localStorage.getItem('pda_custom_cats')||'[]');
+}
+function saveCustomCategories(cats){
+  localStorage.setItem('pda_custom_cats', JSON.stringify(cats));
+}
+function addCustomCategory(){
+  var name=prompt('Enter new category name (e.g. "Athletic Fields", "Tree & Shrub"):');
+  if(!name||!name.trim()) return;
+  name=name.trim();
+  var cats=getCustomCategories();
+  if(cats.indexOf(name)>=0){toast('Category already exists');return;}
+  cats.push(name);
+  saveCustomCategories(cats);
+  renderProds();
+  toast('✓ Category "'+name+'" added — name new services starting with "'+name+'" to use it');
+}
+function deleteCustomCategory(name){
+  if(!confirm('Delete category "'+name+'"? Services in it will move to Other.')) return;
+  var cats=getCustomCategories().filter(function(c){return c!==name;});
+  saveCustomCategories(cats);
+  renderProds();
+  toast('Category deleted');
+}
 function getProdLibrary(){
   var seen={};var lib=[];
   Object.values(SV).forEach(function(svc){

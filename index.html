@@ -1159,19 +1159,21 @@ function renderProds(){
       var pid=btoa(encodeURIComponent(k));
       html+=buildServiceRow(k,d,pid,cat,catIdx,ki,catKeys.length,locked);
     });
+    html+='</div>'; // close cat-section
   });
   document.getElementById('prodList').innerHTML=html;
 }
 function buildCatHeader(cat,catIdx,locked,isCustom){
-  var lockBtn='<button onclick="toggleCatLock(catList['+catIdx+'])" style="background:'+(locked?'var(--gdim)':'var(--sur2)')+';color:'+(locked?'#fff':'var(--dim)')+';border:1px solid '+(locked?'var(--gdim)':'var(--bdr)')+';border-radius:20px;padding:3px 10px;font-size:10px;font-family:var(--mono);cursor:pointer">'+(locked?'&#x1F512; Locked':'&#x1F513; Unlocked')+'</button>';
-  var delBtn=isCustom?'<button class="btn-del" style="font-size:12px" onclick="deleteCustomCategory(catList['+catIdx+'])">&#215;</button>':'';
-  return '<div class="cat-hdr" style="display:flex;justify-content:space-between;align-items:center"><span>'+cat+'</span><div style="display:flex;align-items:center;gap:6px">'+delBtn+lockBtn+'</div></div>';
+  var lockStyle='background:'+(locked?'var(--gdim)':'var(--sur2)')+';color:'+(locked?'#fff':'var(--dim)')+';border:1px solid '+(locked?'var(--gdim)':'var(--bdr)')+';border-radius:20px;padding:3px 10px;font-size:10px;font-family:var(--mono);cursor:pointer';
+  var lockBtn='<button onclick="catLockBtn(this)" style="'+lockStyle+'">'+(locked?'&#x1F512; Locked':'&#x1F513; Unlocked')+'</button>';
+  var delBtn=isCustom?'<button class="btn-del" style="font-size:12px" onclick="catDelBtn(this)">&#215;</button>':'';
+  return '<div class="cat-section" data-cat="'+cat+'" style="margin-bottom:4px"><div class="cat-hdr" style="display:flex;justify-content:space-between;align-items:center"><span>'+cat+'</span><div style="display:flex;align-items:center;gap:6px">'+delBtn+lockBtn+'</div></div>';
 }
 function buildServiceRow(k,d,pid,cat,catIdx,ki,total,locked){
   var arrows='';
   if(!locked){
-    var up=ki>0?'<button class="btn-sm" onclick="event.stopPropagation();moveSvc(catList['+catIdx+'],'+ki+',-1)" style="padding:1px 5px;font-size:11px;line-height:1.4">&#8593;</button>':'<div style="height:22px;width:26px"></div>';
-    var dn=ki<total-1?'<button class="btn-sm" onclick="event.stopPropagation();moveSvc(catList['+catIdx+'],'+ki+',1)" style="padding:1px 5px;font-size:11px;line-height:1.4">&#8595;</button>':'<div style="height:22px;width:26px"></div>';
+    var up=ki>0?'<button class="btn-sm" onclick="event.stopPropagation();svcUp(this)" style="padding:1px 5px;font-size:11px;line-height:1.4">&#8593;</button>':'<div style="height:22px;width:26px"></div>';
+    var dn=ki<total-1?'<button class="btn-sm" onclick="event.stopPropagation();svcDn(this)" style="padding:1px 5px;font-size:11px;line-height:1.4">&#8595;</button>':'<div style="height:22px;width:26px"></div>';
     arrows='<div style="display:flex;flex-direction:column;gap:1px;margin-right:2px">'+up+dn+'</div>';
   }
   var body=d.products.map(function(p,i){
@@ -1187,7 +1189,7 @@ function buildServiceRow(k,d,pid,cat,catIdx,ki,total,locked){
       +'</div></div>';
   }).join('');
   // Use data-pid attribute to avoid quote nesting issues
-  return '<div class="prod-item" data-pid="'+pid+'">'
+  return '<div class="prod-item" data-pid="'+pid+'" data-idx="'+ki+'">'
     +'<div class="prod-hdr" onclick="tProd(this.parentElement.dataset.pid)">'
     +'<div class="prod-title"><div class="prod-name">'+k+'</div>'
     +'<div class="prod-sub">'+d.products.map(function(p){return p.product;}).join(' + ')+'</div>'
@@ -1207,6 +1209,10 @@ function tProd(pid){
 }
 function prodEdit(btn){openEditSvc(btn.closest('.prod-item').dataset.pid);}
 function prodDel(btn){deleteSvc(btn.closest('.prod-item').dataset.pid);}
+function catLockBtn(btn){var cat=btn.closest('[data-cat]').dataset.cat;toggleCatLock(cat);}
+function catDelBtn(btn){var cat=btn.closest('[data-cat]').dataset.cat;deleteCustomCategory(cat);}
+function svcUp(btn){var pi=btn.closest('.prod-item');var cat=pi.closest('[data-cat]').dataset.cat;var idx=parseInt(pi.dataset.idx);moveSvc(cat,idx,-1);}
+function svcDn(btn){var pi=btn.closest('.prod-item');var cat=pi.closest('[data-cat]').dataset.cat;var idx=parseInt(pi.dataset.idx);moveSvc(cat,idx,1);}
 function getSvcOrder(){return JSON.parse(localStorage.getItem('pda_svc_order')||'{}');}
 function saveSvcOrder(o){localStorage.setItem('pda_svc_order',JSON.stringify(o));}
 function getCatLocks(){return JSON.parse(localStorage.getItem('pda_cat_locks')||'{}');}

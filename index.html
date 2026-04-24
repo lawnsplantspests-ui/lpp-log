@@ -1120,24 +1120,128 @@ function dC(idx){
     });
   }
 }
-function renderProds(){var q=(document.getElementById('prodQ')||{value:''}).value.toLowerCase();var keys=Object.keys(SV).filter(function(k){return k.toLowerCase().indexOf(q)>=0;});document.getElementById('prodMeta').textContent=keys.length+' of '+Object.keys(SV).length+' services';var customCats=getCustomCategories();var cats={'Lawn Care':[],'Lime':[],'Pest Control':[],'Yellow Jackets':[],'PHC':[],'Aquatic':[],'Bare Ground':[]};customCats.forEach(function(c){cats[c]=[];});cats['Other']=[];keys.forEach(function(k){
-    if(k.indexOf('Lawn')===0) cats['Lawn Care'].push(k);
-    else if(k.indexOf('Lime')===0) cats['Lime'].push(k);
-    else if(k.indexOf('Pest')===0) cats['Pest Control'].push(k);
-    else if(k.indexOf('Yellow')===0) cats['Yellow Jackets'].push(k);
-    else if(k.indexOf('PHC')===0) cats['PHC'].push(k);
-    else if(k.indexOf('Aquatic')===0||k.indexOf('Pond')===0||k.indexOf('Creek')===0) cats['Aquatic'].push(k);
-    else if(k.indexOf('Bare Ground')===0||k.indexOf('Bare-Ground')===0) cats['Bare Ground'].push(k);
-    else {
-      var found=false;
-      customCats.forEach(function(c){if(k.indexOf(c)===0){cats[c].push(k);found=true;}});
-      if(!found) cats['Other'].push(k);
+function renderProds(){
+  var q=(document.getElementById('prodQ')||{value:''}).value.toLowerCase();
+  var keys=Object.keys(SV).filter(function(k){return k.toLowerCase().indexOf(q)>=0;});
+  document.getElementById('prodMeta').textContent=keys.length+' of '+Object.keys(SV).length+' services';
+  var customCats=getCustomCategories();
+  var catList=['Lawn Care','Lime','Pest Control','Yellow Jackets','PHC','Aquatic','Bare Ground'];
+  customCats.forEach(function(c){if(catList.indexOf(c)<0)catList.push(c);});
+  catList.push('Other');
+  var cats={};catList.forEach(function(c){cats[c]=[];});
+  keys.forEach(function(k){
+    if(k.indexOf('Lawn')===0)cats['Lawn Care'].push(k);
+    else if(k.indexOf('Lime')===0)cats['Lime'].push(k);
+    else if(k.indexOf('Pest')===0)cats['Pest Control'].push(k);
+    else if(k.indexOf('Yellow')===0)cats['Yellow Jackets'].push(k);
+    else if(k.indexOf('PHC')===0)cats['PHC'].push(k);
+    else if(k.indexOf('Aquatic')===0||k.indexOf('Pond')===0||k.indexOf('Creek')===0)cats['Aquatic'].push(k);
+    else if(k.indexOf('Bare Ground')===0||k.indexOf('Bare-Ground')===0)cats['Bare Ground'].push(k);
+    else{var found=false;customCats.forEach(function(c){if(k.indexOf(c)===0){cats[c].push(k);found=true;}});if(!found)cats['Other'].push(k);}
+  });
+  var order=getSvcOrder();
+  var locks=getCatLocks();
+  var html='';
+  catList.forEach(function(cat,catIdx){
+    if(!cats[cat]||!cats[cat].length)return;
+    var catKeys=cats[cat].slice();
+    if(order[cat]){
+      var ordered=[];
+      order[cat].forEach(function(k){if(catKeys.indexOf(k)>=0)ordered.push(k);});
+      catKeys.forEach(function(k){if(ordered.indexOf(k)<0)ordered.push(k);});
+      catKeys=ordered;
     }
-  });var html='';Object.keys(cats).forEach(function(cat){if(!cats[cat].length)return;var isCustom=customCats.indexOf(cat)>=0;
-    html+='<div class="cat-hdr" style="display:flex;justify-content:space-between;align-items:center">'+cat
-      +(isCustom?'<button class="btn-del" style="font-size:12px" onclick="deleteCustomCategory(\''+cat+'\')" title="Delete category">×</button>':'')
-      +'</div>';cats[cat].forEach(function(k){var d=SV[k];var pid=btoa(encodeURIComponent(k));html+='<div class="prod-item"><div class="prod-hdr" onclick="tProd(\''+pid+'\')">'+'<div class="prod-title"><div class="prod-name">'+k+'</div><div class="prod-sub">'+d.products.map(function(p){return p.product;}).join(' + ')+'</div>'+(d.products.length>1?'<span class="prod-multi">'+d.products.length+' products</span>':'')+'</div><div class="prod-actions"><button class="btn-sm" onclick="event.stopPropagation();openEditSvc(\''+pid+'\')">Edit</button><button class="btn-del" onclick="event.stopPropagation();deleteSvc(\''+pid+'\')">×</button></div></div>'+'<div class="prod-body" id="pb-'+pid+'">'+d.products.map(function(p,i){return'<div class="sub-prod">'+(d.products.length>1?'<div class="sub-prod-num">Product '+(i+1)+'</div>':'')+'<div class="pgrd"><span class="pk">Product</span><span class="pv">'+p.product+'</span><span class="pk">Active Ing</span><span class="pv">'+p.activeIng+'</span><span class="pk">EPA Reg #</span><span class="pv">'+p.epa+'</span><span class="pk">Rate</span><span class="pv">'+p.rate+'</span><span class="pk">Method</span><span class="pv">'+p.method+'</span><span class="pk">Target Pest</span><span class="pv">'+p.targetPest+'</span></div></div>';}).join('')+'</div></div>';});});document.getElementById('prodList').innerHTML=html;}
-function tProd(pid){document.getElementById('pb-'+pid).classList.toggle('open');}
+    var locked=locks[cat]||false;
+    var isCustom=customCats.indexOf(cat)>=0;
+    html+=buildCatHeader(cat,catIdx,locked,isCustom);
+    catKeys.forEach(function(k,ki){
+      var d=SV[k];if(!d)return;
+      var pid=btoa(encodeURIComponent(k));
+      html+=buildServiceRow(k,d,pid,cat,catIdx,ki,catKeys.length,locked);
+    });
+  });
+  document.getElementById('prodList').innerHTML=html;
+}
+function buildCatHeader(cat,catIdx,locked,isCustom){
+  var lockBtn='<button onclick="toggleCatLock(catList['+catIdx+'])" style="background:'+(locked?'var(--gdim)':'var(--sur2)')+';color:'+(locked?'#fff':'var(--dim)')+';border:1px solid '+(locked?'var(--gdim)':'var(--bdr)')+';border-radius:20px;padding:3px 10px;font-size:10px;font-family:var(--mono);cursor:pointer">'+(locked?'&#x1F512; Locked':'&#x1F513; Unlocked')+'</button>';
+  var delBtn=isCustom?'<button class="btn-del" style="font-size:12px" onclick="deleteCustomCategory(catList['+catIdx+'])">&#215;</button>':'';
+  return '<div class="cat-hdr" style="display:flex;justify-content:space-between;align-items:center"><span>'+cat+'</span><div style="display:flex;align-items:center;gap:6px">'+delBtn+lockBtn+'</div></div>';
+}
+function buildServiceRow(k,d,pid,cat,catIdx,ki,total,locked){
+  var arrows='';
+  if(!locked){
+    var up=ki>0?'<button class="btn-sm" onclick="event.stopPropagation();moveSvc(catList['+catIdx+'],'+ki+',-1)" style="padding:1px 5px;font-size:11px;line-height:1.4">&#8593;</button>':'<div style="height:22px;width:26px"></div>';
+    var dn=ki<total-1?'<button class="btn-sm" onclick="event.stopPropagation();moveSvc(catList['+catIdx+'],'+ki+',1)" style="padding:1px 5px;font-size:11px;line-height:1.4">&#8595;</button>':'<div style="height:22px;width:26px"></div>';
+    arrows='<div style="display:flex;flex-direction:column;gap:1px;margin-right:2px">'+up+dn+'</div>';
+  }
+  var body=d.products.map(function(p,i){
+    return '<div class="sub-prod">'+(d.products.length>1?'<div class="sub-prod-num">Product '+(i+1)+'</div>':'')
+      +'<div class="pgrd">'
+      +'<span class="pk">Product</span><span class="pv">'+p.product+'</span>'
+      +'<span class="pk">Active Ing</span><span class="pv">'+p.activeIng+'</span>'
+      +'<span class="pk">EPA Reg #</span><span class="pv">'+p.epa+'</span>'
+      +'<span class="pk">Rate</span><span class="pv">'+p.rate+'</span>'
+      +'<span class="pk">Method</span><span class="pv">'+p.method+'</span>'
+      +'<span class="pk">Target Pest</span><span class="pv">'+p.targetPest+'</span>'
+      +'<span class="pk">App Site</span><span class="pv">'+d.appSite+'</span>'
+      +'</div></div>';
+  }).join('');
+  // Use data-pid attribute to avoid quote nesting issues
+  return '<div class="prod-item" data-pid="'+pid+'">'
+    +'<div class="prod-hdr" onclick="tProd(this.parentElement.dataset.pid)">'
+    +'<div class="prod-title"><div class="prod-name">'+k+'</div>'
+    +'<div class="prod-sub">'+d.products.map(function(p){return p.product;}).join(' + ')+'</div>'
+    +(d.products.length>1?'<span class="prod-multi">'+d.products.length+' products</span>':'')
+    +'</div>'
+    +'<div class="prod-actions" style="align-items:center">'+arrows
+    +'<button class="btn-sm" onclick="event.stopPropagation();prodEdit(this)">Edit</button>'
+    +'<button class="btn-del" onclick="event.stopPropagation();prodDel(this)">&#215;</button>'
+    +'</div></div>'
+    +'<div class="prod-body" id="pb-'+pid+'">'+body+'</div>'
+    +'</div>';
+}
+
+function tProd(pid){
+  var body=document.getElementById('pb-'+pid);
+  if(body)body.classList.toggle('open');
+}
+function prodEdit(btn){openEditSvc(btn.closest('.prod-item').dataset.pid);}
+function prodDel(btn){deleteSvc(btn.closest('.prod-item').dataset.pid);}
+function getSvcOrder(){return JSON.parse(localStorage.getItem('pda_svc_order')||'{}');}
+function saveSvcOrder(o){localStorage.setItem('pda_svc_order',JSON.stringify(o));}
+function getCatLocks(){return JSON.parse(localStorage.getItem('pda_cat_locks')||'{}');}
+function saveCatLocks(l){localStorage.setItem('pda_cat_locks',JSON.stringify(l));}
+function toggleCatLock(cat){
+  var l=getCatLocks();l[cat]=!l[cat];saveCatLocks(l);renderProds();
+  toast(l[cat]?'🔒 '+cat+' locked':'🔓 '+cat+' unlocked');
+}
+function moveSvc(cat,idx,dir){
+  var order=getSvcOrder();
+  // Build current ordered list for this cat
+  var keys=Object.keys(SV).filter(function(k){
+    if(k.indexOf('Lawn')===0&&cat==='Lawn Care')return true;
+    if(k.indexOf('Lime')===0&&cat==='Lime')return true;
+    if(k.indexOf('Pest')===0&&cat==='Pest Control')return true;
+    if(k.indexOf('Yellow')===0&&cat==='Yellow Jackets')return true;
+    if(k.indexOf('PHC')===0&&cat==='PHC')return true;
+    if((k.indexOf('Aquatic')===0||k.indexOf('Pond')===0||k.indexOf('Creek')===0)&&cat==='Aquatic')return true;
+    if((k.indexOf('Bare Ground')===0||k.indexOf('Bare-Ground')===0)&&cat==='Bare Ground')return true;
+    var cc=getCustomCategories();
+    for(var i=0;i<cc.length;i++){if(k.indexOf(cc[i])===0&&cat===cc[i])return true;}
+    return false;
+  });
+  var ordered=order[cat]?order[cat].slice():keys.slice();
+  // Ensure all current keys are in ordered
+  keys.forEach(function(k){if(ordered.indexOf(k)<0)ordered.push(k);});
+  // Remove stale keys
+  ordered=ordered.filter(function(k){return keys.indexOf(k)>=0;});
+  var newIdx=idx+dir;
+  if(newIdx<0||newIdx>=ordered.length)return;
+  var tmp=ordered[idx];ordered[idx]=ordered[newIdx];ordered[newIdx]=tmp;
+  order[cat]=ordered;
+  saveSvcOrder(order);
+  renderProds();
+}
 function getCustomCategories(){
   return JSON.parse(localStorage.getItem('pda_custom_cats')||'[]');
 }
@@ -1233,8 +1337,27 @@ function addEditProdField(){
   c.appendChild(div);
 }
 function closeEditSvc(){document.getElementById('editSvcModal').classList.remove('show');editSvcKey=null;}
-function saveEditSvc(){var newName=document.getElementById('epName').value.trim();if(!newName){toast('⚠ Name cannot be empty');return;}var prods=[];document.querySelectorAll('#editProdsContainer .sub-prod').forEach(function(div){prods.push({product:div.querySelector('.ep-product').value.trim(),activeIng:div.querySelector('.ep-active').value.trim(),epa:div.querySelector('.ep-epa').value.trim(),rate:div.querySelector('.ep-rate').value.trim(),totalMixed:div.querySelector('.ep-mixed').value.trim(),method:div.querySelector('.ep-method').value.trim(),targetPest:div.querySelector('.ep-pest').value.trim()});});if(newName!==editSvcKey)delete SV[editSvcKey];SV[newName]={appSite:document.getElementById('epSite').value,notes:document.getElementById('epNotes').value.trim(),products:prods};saveSV();buildDD();renderProds();closeEditSvc();toast('✓ '+newName+' updated');}
+function saveEditSvc(){
+  var newName=document.getElementById('epName').value.trim();
+  if(!newName){toast('⚠ Name cannot be empty');return;}
+  var prods=[];
+  document.querySelectorAll('#editProdsContainer .sub-prod').forEach(function(div){
+    prods.push({product:div.querySelector('.ep-product').value.trim(),activeIng:div.querySelector('.ep-active').value.trim(),epa:div.querySelector('.ep-epa').value.trim(),rate:div.querySelector('.ep-rate').value.trim(),totalMixed:div.querySelector('.ep-mixed').value.trim(),method:div.querySelector('.ep-method').value.trim(),targetPest:div.querySelector('.ep-pest').value.trim()});
+  });
+  if(newName!==editSvcKey){
+    var order=getSvcOrder();
+    Object.keys(order).forEach(function(cat){
+      var i=order[cat].indexOf(editSvcKey);
+      if(i>=0)order[cat][i]=newName;
+    });
+    saveSvcOrder(order);
+    delete SV[editSvcKey];
+  }
+  SV[newName]={appSite:document.getElementById('epSite').value,notes:document.getElementById('epNotes').value.trim(),products:prods};
+  saveSV();buildDD();renderProds();closeEditSvc();toast('✓ '+newName+' saved to Sheets');
+}
 function deleteSvc(pid){var key=decodeURIComponent(atob(pid));if(!confirm('Delete "'+key+'"? Cannot be undone.'))return;delete SV[key];saveSV();buildDD();renderProds();toast('Service deleted');}
+function escQ(s){return(s||'').replace(/'/g,"\\'");}
 function esc(s){return(s||'').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 function goTab(t){document.querySelectorAll('.tab').forEach(function(x){x.classList.remove('on');});document.querySelectorAll('.pg').forEach(function(x){x.classList.remove('on');});document.getElementById('tab-'+t).classList.add('on');document.getElementById('pg-'+t).classList.add('on');}
 function toast(msg){var t=document.getElementById('toast');t.textContent=msg;t.className='toast show';setTimeout(function(){t.className='toast';},3000);}

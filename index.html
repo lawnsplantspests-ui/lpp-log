@@ -162,7 +162,7 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans)}
   <div class="tab" id="tab-arch" onclick="goTab('arch')">ARCHIVE</div>
   <div class="tab" id="tab-tot" onclick="goTab('tot');renderTotals()">TOTALS</div>
   <div class="tab" id="tab-cust" onclick="goTab('cust')">CUSTOMERS</div>
-  <div class="tab" id="tab-prod" onclick="goTab('prod');renderProds()">PRODUCTS</div>
+  <div class="tab" id="tab-prod" onclick="goTab('prod');renderProds();renderLibProducts()">PRODUCTS</div>
 </div>
 <!-- ENTRY -->
 <div class="pg on" id="pg-new"><div class="body">
@@ -320,6 +320,26 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans)}
   </div>
   <div class="cust-meta" id="prodMeta"></div>
   <div id="prodList"></div>
+
+  <!-- PRODUCT LIBRARY -->
+  <div style="margin-top:20px;padding-top:14px;border-top:2px solid var(--bdr)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <div style="font-size:10px;font-family:var(--mono);color:var(--mut);letter-spacing:1.2px;text-transform:uppercase">Product Library</div>
+      <button class="btn-sm" onclick="toggleLibForm()" style="color:var(--grn);border-color:var(--gdim)">+ Add Product</button>
+    </div>
+    <div id="libForm" style="display:none;background:var(--sur2);border:1px solid var(--gdim);border-radius:10px;padding:12px;margin-bottom:12px">
+      <div style="font-size:11px;font-family:var(--mono);color:var(--grn);margin-bottom:10px;text-transform:uppercase;letter-spacing:.8px">New Reference Product</div>
+      <div class="prod-field"><label>Product Name</label><input type="text" id="libName" placeholder="e.g. Bifenthrin 7.9%"></div>
+      <div class="prod-field"><label>Active Ingredient</label><input type="text" id="libActive" placeholder="e.g. Bifenthrin 7.9%"></div>
+      <div class="prod-field"><label>EPA Reg #</label><input type="text" id="libEpa" placeholder="e.g. 279-3206"></div>
+      <div class="prod-field"><label>Rate</label><input type="text" id="libRate" placeholder="e.g. 0.5-1 fl oz / gal water"></div>
+      <div class="prod-field"><label>Method</label><input type="text" id="libMethod" placeholder="e.g. Backpack sprayer"></div>
+      <div class="prod-field"><label>Target Pest</label><input type="text" id="libPest" placeholder="e.g. Ants"></div>
+      <div class="prod-field"><label>Notes</label><textarea id="libNotes" rows="2" placeholder="Usage notes, mixing instructions, storage…"></textarea></div>
+      <button class="btn-primary" onclick="addLibProduct()" style="margin-top:4px">Save to Product Library</button>
+    </div>
+    <div id="libList"></div>
+  </div>
 </div></div>
 <!-- EDIT MODAL -->
 <div class="modal-bg" id="editSvcModal" onclick="if(event.target===this)closeEditSvc()">
@@ -354,7 +374,8 @@ var DEFAULT_SV={'Lawn Care - Rd 1 (Fertilizer Only)':{appSite:'Full Lawn',notes:
 'Bare Ground - Pre-Emergent':{appSite:'Bare Ground / Target Area',notes:'Pre-emergent for bare ground areas. Apply before weed germination.',products:[{product:'Preen / Pendimethalin 3.8%',activeIng:'Pendimethalin 3.8%',epa:'241-341',rate:'2-3 lbs / 1000 sqft granular',totalMixed:'Granular — record bags used',method:'Granular spreader — even coverage',targetPest:'Annual Grasses / Broadleaf Weeds'}]}};
 
 // ── STATE ────────────────────────────────────────────────────────
-var queue   = JSON.parse(localStorage.getItem('pda_q') || '[]');
+var queue      = JSON.parse(localStorage.getItem('pda_q') || '[]');
+var productLib = []; // loaded from Google Sheets Products tab
 var archive = JSON.parse(localStorage.getItem('pda_a') || '[]');
 var custDB  = JSON.parse(localStorage.getItem('pda_c_cache') || '[]');
 var SV      = JSON.parse(localStorage.getItem('pda_sv_cache') || 'null');
@@ -434,7 +455,14 @@ function loadAll() {
         toast('⚡ Services pushed to Google Sheets');
       }
 
-      buildDD(); renderCusts(); renderProds();
+      // Load products from Products tab
+      if (d.products && d.products.length) {
+        productLib = d.products;
+        localStorage.setItem('pda_lib_cache', JSON.stringify(productLib));
+      } else {
+        productLib = JSON.parse(localStorage.getItem('pda_lib_cache') || '[]');
+      }
+      buildDD(); renderCusts(); renderProds(); renderLibProducts();
       setSUI('ok','synced ✓');
       var bar = document.getElementById('offlineBar');
       if (bar) bar.style.display = 'none';
@@ -1272,12 +1300,96 @@ function deleteCustomCategory(name){
   renderProds();
   toast('Category deleted');
 }
+// ── PRODUCT LIBRARY ──────────────────────────────────────────────
+function getLibProducts(){
+  return productLib;
+}
+function saveLibProducts(lib){
+  productLib = lib;
+  localStorage.setItem('pda_lib_cache', JSON.stringify(lib));
+}
+function toggleLibForm(){
+  var f=document.getElementById('libForm');
+  f.style.display=f.style.display==='none'?'block':'none';
+}
+function addLibProduct(){
+  var name=document.getElementById('libName').value.trim();
+  if(!name){toast('⚠ Product name required');return;}
+  var lib=getLibProducts();
+  if(lib.find(function(p){return p.product.toLowerCase()===name.toLowerCase();})){
+    toast('⚠ Already in library');return;
+  }
+  var prod={
+    product:name,
+    activeIng:document.getElementById('libActive').value.trim(),
+    epa:document.getElementById('libEpa').value.trim(),
+    rate:document.getElementById('libRate').value.trim(),
+    method:document.getElementById('libMethod').value.trim(),
+    targetPest:document.getElementById('libPest').value.trim(),
+    notes:document.getElementById('libNotes').value.trim(),
+    addedAt:new Date().toLocaleDateString('en-US')
+  };
+  lib.push(prod);
+  saveLibProducts(lib);
+  renderLibProducts();
+  // Save to Google Sheets Products tab
+  api({action:'addProduct', product:prod.product, activeIng:prod.activeIng, epa:prod.epa, rate:prod.rate, method:prod.method, targetPest:prod.targetPest, notes:prod.notes},
+    function(){ setSUI('ok','synced ✓'); },
+    function(){ setSUI('err','saved locally'); }
+  );
+  // Clear form
+  ['libName','libActive','libEpa','libRate','libMethod','libPest','libNotes'].forEach(function(id){
+    var el=document.getElementById(id);if(el)el.value='';
+  });
+  document.getElementById('libForm').style.display='none';
+  toast('✓ '+name+' added to Products tab');
+}
+function deleteLibProduct(idx){
+  var lib=getLibProducts();
+  var prod=lib[idx];
+  if(!confirm('Remove "'+prod.product+'" from library?'))return;
+  lib.splice(idx,1);
+  saveLibProducts(lib);
+  renderLibProducts();
+  api({action:'deleteProduct', product:prod.product}, null, null);
+}
+function renderLibProducts(){
+  var lib=getLibProducts();
+  var el=document.getElementById('libList');
+  if(!el)return;
+  if(!lib.length){
+    el.innerHTML='<div style="text-align:center;padding:20px;color:var(--mut);font-size:12px;font-family:var(--mono)">No products yet — tap + Add Product to build your library</div>';
+    return;
+  }
+  el.innerHTML=lib.map(function(p,i){
+    return '<div class="prod-item" style="margin-bottom:8px">'
+      +'<div style="padding:10px 13px;display:flex;align-items:flex-start;justify-content:space-between">'
+      +'<div style="flex:1;min-width:0">'
+      +'<div style="font-size:13px;font-weight:600;margin-bottom:3px">'+p.product+'</div>'
+      +'<div style="font-size:10px;font-family:var(--mono);color:var(--dim);line-height:1.6">'
+      +(p.activeIng?'<div>AI: '+p.activeIng+'</div>':'')
+      +(p.epa?'<div>EPA: '+p.epa+'</div>':'')
+      +(p.rate?'<div>Rate: '+p.rate+'</div>':'')
+      +(p.targetPest?'<div>Target: '+p.targetPest+'</div>':'')
+      +(p.notes?'<div style="color:var(--mut);margin-top:3px">'+p.notes+'</div>':'')
+      +'</div></div>'
+      +'<button class="btn-del" onclick="deleteLibProduct('+i+')" style="flex-shrink:0;margin-left:8px">×</button>'
+      +'</div></div>';
+  }).join('');
+}
+
 function getProdLibrary(){
   var seen={};var lib=[];
+  // Products from services
   Object.values(SV).forEach(function(svc){
+    if(!svc.products)return;
     svc.products.forEach(function(p){
       if(p.product&&!seen[p.product]){seen[p.product]=true;lib.push(p);}
     });
+  });
+  // Standalone products from Products tab
+  productLib.forEach(function(p){
+    if(p.product&&!seen[p.product]){seen[p.product]=true;lib.push(p);}
   });
   return lib.sort(function(a,b){return a.product.localeCompare(b.product);});
 }

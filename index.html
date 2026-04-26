@@ -464,10 +464,11 @@ function loadAll() {
       } else {
         productLib = JSON.parse(localStorage.getItem('pda_lib_cache') || '[]');
       }
-      buildDD(); renderCusts(); renderProds(); renderLibProducts();
+      buildDD(); renderCusts(); renderProds(); renderLibProducts(); populateLibDDs();
       setSUI('ok','synced ✓');
       var bar = document.getElementById('offlineBar');
       if (bar) bar.style.display = 'none';
+      toast('✓ Loaded '+custDB.length+' customers, '+productLib.length+' products');
     },
     function(err) {
       console.warn('loadAll failed:', err);
@@ -487,37 +488,36 @@ function saveC() {
 }
 
 // ── SAVE SERVICES ─────────────────────────────────────────────────
-function fillProdFromLib(sel){
-  if(!sel.value) return;
-  try{
-    var p=JSON.parse(decodeURIComponent(sel.value));
-    var div=sel.closest('.sub-prod');
-    if(!div) return;
-    // Support both ep- (edit) and np- (new service) field classes
-    var nameEl=div.querySelector('.ep-product,.np-product');
-    var aiEl=div.querySelector('.ep-active,.np-active');
-    var epaEl=div.querySelector('.ep-epa,.np-epa');
-    var rateEl=div.querySelector('.ep-rate,.np-rate');
-    var methodEl=div.querySelector('.ep-method,.np-method');
-    var pestEl=div.querySelector('.ep-pest,.np-pest');
-    if(nameEl&&p.product) nameEl.value=p.product;
-    if(aiEl&&p.activeIng) aiEl.value=p.activeIng;
-    if(epaEl&&p.epa) epaEl.value=p.epa;
-    if(rateEl&&p.rate) rateEl.value=p.rate;
-    if(methodEl&&p.method) methodEl.value=p.method;
-    if(pestEl&&p.targetPest) pestEl.value=p.targetPest;
-    toast('✓ '+p.product+' loaded');
-  }catch(e){console.warn('fillProdFromLib error:',e);}
-}
+function fillProdFromLib(sel){fillEditLib(sel);}
 
-function populateLibDDs(){
-  // Fill all library dropdowns in the edit modal
-  var opts=getLibDropdownOptions(true);
-  document.querySelectorAll('.ep-product-dd').forEach(function(sel){
-    var cur=sel.value;
-    sel.innerHTML=opts;
-    if(cur) sel.value=cur;
-  });
+
+
+function fetchMonthFromSheets(){
+  var n=new Date();
+  var tab=n.toLocaleDateString('en-US',{month:'short',year:'numeric'}).replace(' ','_');
+  setSUI('go','loading from Sheets…');
+  api({action:'getLog', tab:tab},
+    function(d){
+      if(d.entries&&d.entries.length){
+        var today=n.toLocaleDateString('en-US',{month:'2-digit',day:'2-digit',year:'numeric'});
+        var ex=archive.findIndex(function(a){return a.date===today;});
+        if(ex>=0) archive[ex].entries=d.entries;
+        else archive.push({date:today,entries:d.entries});
+        saveA();
+        renderTotals();
+        renderArchive();
+        setSUI('ok','synced ✓');
+        toast('✓ Loaded '+d.entries.length+' entries from Sheets');
+      } else {
+        setSUI('ok','synced ✓');
+        toast('No entries found in Sheets for '+tab);
+      }
+    },
+    function(){
+      setSUI('err','offline');
+      toast('⚠ Could not reach Google Sheets');
+    }
+  );
 }
 
 function saveSV() {
@@ -955,7 +955,13 @@ function renderTotals(){
   var period=document.getElementById('totPer').value;
   var el=document.getElementById('totContent');
   var all=getPE(period);
-  if(!all.length){el.innerHTML='<div class="empty"><div class="empty-ico">📊</div><p>No entries for this period.</p></div>';return;}
+  if(!all.length){
+    el.innerHTML='<div class="empty"><div class="empty-ico">📊</div>'
+      +'<p>No entries for this period.</p>'
+      +(archive.length===0?'<p style="font-size:12px;color:var(--mut)">Archive your daily entries to see totals.<br>Or <button class="btn-sm" onclick="fetchMonthFromSheets()" style="margin-top:8px">Load from Google Sheets</button></p>':'')
+      +'</div>';
+    return;
+  }
 
   // Stats
   var cats={'Lawn Care':0,'Pest Control':0,'Yellow Jackets':0,'PHC / Tree & Shrub':0,'Aquatic':0};
@@ -1479,34 +1485,78 @@ function getLibDropdownOptions(includeBlank){
   return opts;
 }
 function libSelect(fillFn){
-  var lib=getProdLibrary();
-  var opts='<option value="">— Pick from library or fill manually —</option>';
-  lib.forEach(function(p,i){opts+='<option value="'+i+'">'+p.product+'</option>';});
-  return '<div class="prod-field"><label>Pick Existing Product</label><select style="width:100%;background:var(--sur);border:1px solid var(--gdim);border-radius:7px;padding:7px 10px;color:var(--txt);font-size:13px;appearance:none;-webkit-appearance:none" onchange="'+fillFn+'(this)">'+opts+'</select></div>';
+  // Returns HTML with a placeholder — populateLibDDs will fill options after modal opens
+  return '<div class="prod-field"><label>Product Library</label>'
+    +'<select class="ep-product-dd" data-fillfn="'+fillFn+'" style="width:100%;background:var(--sur);border:1px solid var(--gdim);border-radius:7px;padding:7px 10px;color:var(--txt);font-size:13px;appearance:none;-webkit-appearance:none" onchange="libSelectFill(this)">'
+    +'<option value="">— Select from library —</option>'
+    +'</select></div>';
+}
+
+function libSelectFill(sel){
+  var fn=sel.dataset.fillfn||'fillEditLib';
+  if(fn==='fillNewLib') fillNewLib(sel);
+  else fillEditLib(sel);
+}
+
+function populateLibDDs(){
+  var lib=getProdLibrary().slice().sort(function(a,b){return(a.product||'').localeCompare(b.product||'');});
+  if(!lib.length) return;
+  var opts='<option value="">— Select from library —</option>';
+  lib.forEach(function(p){
+    var tag=getMethodTag(p.method||'');
+    opts+='<option value="'+encodeURIComponent(JSON.stringify(p))+'">'+p.product+tag+'</option>';
+  });
+  document.querySelectorAll('.ep-product-dd').forEach(function(sel){
+    var cur=sel.value;
+    sel.innerHTML=opts;
+    if(cur) sel.value=cur;
+  });
 }
 function fillNewLib(sel){
-  var lib=getProdLibrary();var idx=parseInt(sel.value);if(isNaN(idx))return;
-  var p=lib[idx];var d=sel.closest('.sub-prod');
-  d.querySelector('.np-product').value=p.product||'';
-  d.querySelector('.np-active').value=p.activeIng||'';
-  d.querySelector('.np-epa').value=p.epa||'';
-  d.querySelector('.np-rate').value=p.rate||'';
-  d.querySelector('.np-mixed').value=p.totalMixed||'';
-  d.querySelector('.np-method').value=p.method||'';
-  d.querySelector('.np-pest').value=p.targetPest||'';
-  sel.value='';
+  if(!sel.value) return;
+  try{
+    var p=JSON.parse(decodeURIComponent(sel.value));
+    var d=sel.closest('.sub-prod');
+    var nameEl=d.querySelector('.np-product,.ep-product');
+    var aiEl=d.querySelector('.np-active,.ep-active');
+    var epaEl=d.querySelector('.np-epa,.ep-epa');
+    var rateEl=d.querySelector('.np-rate,.ep-rate');
+    var mixEl=d.querySelector('.np-mixed,.ep-mixed');
+    var methEl=d.querySelector('.np-method,.ep-method');
+    var pestEl=d.querySelector('.np-pest,.ep-pest');
+    if(nameEl) nameEl.value=p.product||'';
+    if(aiEl)   aiEl.value=p.activeIng||'';
+    if(epaEl)  epaEl.value=p.epa||'';
+    if(rateEl) rateEl.value=p.rate||'';
+    if(mixEl)  mixEl.value=p.totalMixed||'';
+    if(methEl) methEl.value=p.method||'';
+    if(pestEl) pestEl.value=p.targetPest||'';
+    sel.value='';
+    toast('✓ '+p.product+' loaded');
+  }catch(e){console.warn('fillNewLib:',e);}
 }
 function fillEditLib(sel){
-  var lib=getProdLibrary();var idx=parseInt(sel.value);if(isNaN(idx))return;
-  var p=lib[idx];var d=sel.closest('.sub-prod');
-  d.querySelector('.ep-product').value=p.product||'';
-  d.querySelector('.ep-active').value=p.activeIng||'';
-  d.querySelector('.ep-epa').value=p.epa||'';
-  d.querySelector('.ep-rate').value=p.rate||'';
-  d.querySelector('.ep-mixed').value=p.totalMixed||'';
-  d.querySelector('.ep-method').value=p.method||'';
-  d.querySelector('.ep-pest').value=p.targetPest||'';
-  sel.value='';
+  if(!sel.value) return;
+  try{
+    var p=JSON.parse(decodeURIComponent(sel.value));
+    var d=sel.closest('.sub-prod');
+    var nameEl=d.querySelector('.ep-product,.np-product');
+    var aiEl=d.querySelector('.ep-active,.np-active');
+    var epaEl=d.querySelector('.ep-epa,.np-epa');
+    var rateEl=d.querySelector('.ep-rate,.np-rate');
+    var mixEl=d.querySelector('.ep-mixed,.np-mixed');
+    var methEl=d.querySelector('.ep-method,.np-method');
+    var pestEl=d.querySelector('.ep-pest,.np-pest');
+    if(nameEl) nameEl.value=p.product||'';
+    if(aiEl) aiEl.value=p.activeIng||'';
+    if(epaEl) epaEl.value=p.epa||'';
+    if(rateEl) rateEl.value=p.rate||'';
+    if(mixEl) mixEl.value=p.totalMixed||'';
+    if(methEl) methEl.value=p.method||'';
+    if(pestEl) pestEl.value=p.targetPest||'';
+    sel.value='';
+    toast('✓ '+p.product+' loaded');
+  }catch(e){console.warn('fillEditLib:',e);}
 }
 function addNewProdField(){
   newProdCount++;var c=document.getElementById('newProdsContainer');
@@ -1523,7 +1573,7 @@ function addNewProdField(){
   c.appendChild(div);
 }
 function addSvc(){var name=document.getElementById('newSvcName').value.trim();if(!name){toast('⚠ Enter a service name');return;}if(SV[name]){toast('⚠ Already exists');return;}var prods=[];document.querySelectorAll('#newProdsContainer .sub-prod').forEach(function(div){prods.push({product:div.querySelector('.np-product').value.trim(),activeIng:div.querySelector('.np-active').value.trim(),epa:div.querySelector('.np-epa').value.trim(),rate:div.querySelector('.np-rate').value.trim(),totalMixed:div.querySelector('.np-mixed').value.trim()||'Record gal applied',method:div.querySelector('.np-method').value.trim(),targetPest:div.querySelector('.np-pest').value.trim()});});SV[name]={appSite:document.getElementById('newSvcSite').value,notes:document.getElementById('newSvcNotes').value.trim(),products:prods};saveSV();buildDD();renderProds();document.getElementById('newSvcName').value='';document.getElementById('newSvcNotes').value='';document.getElementById('newProdsContainer').innerHTML='<div class="sub-prod"><div class="sub-prod-hdr"><span class="sub-prod-num">Product 1</span></div><div class="prod-field"><label>Product Name</label><select class="ep-product-dd" onchange="fillProdFromLib(this)" style="width:100%;background:var(--sur);border:1px solid var(--bdr);border-radius:7px;padding:7px 10px;color:var(--txt);font-size:13px;margin-bottom:4px;appearance:none;-webkit-appearance:none"><option value="">— Select from library —</option></select><input type="text" class="np-product" placeholder="Or type product name"></div><div class="prod-field"><label>Active Ingredient</label><input type="text" class="np-active"></div><div class="prod-field"><label>EPA Reg #</label><input type="text" class="np-epa"></div><div class="prod-field"><label>Rate</label><input type="text" class="np-rate" placeholder="e.g. 0.34 gal / 1000 sqft"></div><div class="prod-field"><label>Total Mixed</label><input type="text" class="np-mixed"></div><div class="prod-field"><label>Method</label><input type="text" class="np-method"></div><div class="prod-field"><label>Target Pest</label><input type="text" class="np-pest"></div></div>';newProdCount=1;toast('✓ '+name+' added');}
-function openEditSvc(pid){var key=decodeURIComponent(atob(pid));editSvcKey=key;var d=SV[key];document.getElementById('epName').value=key;setSel('epSite',d.appSite);document.getElementById('epNotes').value=d.notes||'';var c=document.getElementById('editProdsContainer');c.innerHTML='';d.products.forEach(function(p,i){var div=document.createElement('div');div.className='sub-prod';div.innerHTML='<div class="sub-prod-hdr"><span class="sub-prod-num">Product '+(i+1)+'</span>'+(d.products.length>1?'<button class="btn-del" onclick="this.closest(\'.sub-prod\').remove()">×</button>':'')+'</div><div class="prod-field"><label>Product Name</label><input type="text" class="ep-product" value="'+esc(p.product)+'"></div><div class="prod-field"><label>Active Ingredient</label><input type="text" class="ep-active" value="'+esc(p.activeIng)+'"></div><div class="prod-field"><label>EPA Reg #</label><input type="text" class="ep-epa" value="'+esc(p.epa)+'"></div><div class="prod-field"><label>Rate</label><input type="text" class="ep-rate" value="'+esc(p.rate)+'"></div><div class="prod-field"><label>Total Mixed</label><input type="text" class="ep-mixed" value="'+esc(p.totalMixed)+'"></div><div class="prod-field"><label>Method</label><input type="text" class="ep-method" value="'+esc(p.method)+'"></div><div class="prod-field"><label>Target Pest</label><input type="text" class="ep-pest" value="'+esc(p.targetPest)+'"></div>';c.appendChild(div);});document.getElementById('editSvcModal').classList.add('show');setTimeout(populateLibDDs,50);}
+function openEditSvc(pid){var key=decodeURIComponent(atob(pid));editSvcKey=key;var d=SV[key];document.getElementById('epName').value=key;setSel('epSite',d.appSite);document.getElementById('epNotes').value=d.notes||'';var c=document.getElementById('editProdsContainer');c.innerHTML='';d.products.forEach(function(p,i){var div=document.createElement('div');div.className='sub-prod';div.innerHTML='<div class="sub-prod-hdr"><span class="sub-prod-num">Product '+(i+1)+'</span>'+(d.products.length>1?'<button class="btn-del" onclick="this.closest(\'.sub-prod\').remove()">×</button>':'')+'</div><div class="prod-field"><label>Product Name</label><input type="text" class="ep-product" value="'+esc(p.product)+'"></div><div class="prod-field"><label>Active Ingredient</label><input type="text" class="ep-active" value="'+esc(p.activeIng)+'"></div><div class="prod-field"><label>EPA Reg #</label><input type="text" class="ep-epa" value="'+esc(p.epa)+'"></div><div class="prod-field"><label>Rate</label><input type="text" class="ep-rate" value="'+esc(p.rate)+'"></div><div class="prod-field"><label>Total Mixed</label><input type="text" class="ep-mixed" value="'+esc(p.totalMixed)+'"></div><div class="prod-field"><label>Method</label><input type="text" class="ep-method" value="'+esc(p.method)+'"></div><div class="prod-field"><label>Target Pest</label><input type="text" class="ep-pest" value="'+esc(p.targetPest)+'"></div>';c.appendChild(div);});document.getElementById('editSvcModal').classList.add('show');setTimeout(function(){populateLibDDs();},100);}
 
 function addEditProdField(){
   var c=document.getElementById('editProdsContainer');

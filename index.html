@@ -264,16 +264,14 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans)}
 </div></div>
 <!-- TOTALS -->
 <div class="pg" id="pg-tot"><div class="body">
-  <div class="period-bar" style="flex-wrap:wrap;gap:8px">
+  <div class="period-bar">
     <label style="font-size:10px;font-family:var(--mono);color:var(--dim)">PERIOD:</label>
-    <select id="totPer" onchange="renderTotals()" style="background:transparent;border:none;outline:none;color:var(--txt);font-size:13px;font-family:var(--mono);appearance:none;flex:1;min-width:100px">
-      <option value="today">Today</option>
+    <select id="totPer" onchange="renderTotals()" style="background:transparent;border:none;outline:none;color:var(--txt);font-size:13px;font-family:var(--mono);appearance:none;flex:1">
       <option value="week">This Week</option>
+      <option value="lastweek">Last Week</option>
       <option value="month" selected>This Month</option>
+      <option value="lastmonth">Last Month</option>
       <option value="all">All Time</option>
-    </select>
-    <label id="totMonthLabel" style="font-size:10px;font-family:var(--mono);color:var(--dim)">MONTH:</label>
-    <select id="totMonth" onchange="renderTotals()" style="background:transparent;border:none;outline:none;color:var(--txt);font-size:13px;font-family:var(--mono);appearance:none;flex:1;min-width:100px">
     </select>
   </div>
   <div id="totContent"><div class="empty"><div class="empty-ico">📊</div><p>Archive a day to see totals.</p></div></div>
@@ -1187,33 +1185,36 @@ function exMoEl(el){var w=el.closest("[data-mk]");if(w)exMo(w.dataset.mk);}
 function exMo(mk){var p=mk.split('-');var all=[];archive.filter(function(a){var q=a.date.split('/');return q[2]===p[0]&&(q[0].length<2?'0':'')+q[0]===p[1];}).forEach(function(d){all=all.concat(d.entries);});if(!all.length){toast('No entries');return;}cpTsv(all);toast('✓ '+all.length+' rows copied');}
 // delMo removed — archive is permanent
 function renderTotals(){
-  var period = document.getElementById('totPer').value;
-  var selMo = document.getElementById('totMonth');
+  var sel = document.getElementById('totPer');
+  var period = sel ? sel.value : 'month';
   var n = new Date();
 
-  // Figure out which tabs we need for this period
+  // Populate dropdown with available months if not already done
+  populateTotalsDropdown();
+
+  // Figure out which Sheets tabs to load for this period
   var tabsNeeded = [];
-  if(period === 'all'){
-    tabsNeeded = availableTabs.slice();
-  } else if(period === 'today' || period === 'week'){
-    // Current month + possibly previous month (for week spanning month boundary)
-    var curTab = getTabName(n);
-    tabsNeeded = [curTab];
-    if(period === 'week'){
-      var prev = new Date(n.getFullYear(), n.getMonth()-1, 1);
-      var prevTab = getTabName(prev);
-      if(availableTabs.indexOf(prevTab) >= 0) tabsNeeded.push(prevTab);
-    }
+  if(period === 'week' || period === 'lastweek'){
+    var baseDate = period === 'week' ? n : new Date(n.getTime() - 7*24*60*60*1000);
+    var t1 = getTabName(baseDate);
+    tabsNeeded.push(t1);
+    // Also load prior month in case week spans month boundary
+    var prev = new Date(baseDate.getFullYear(), baseDate.getMonth()-1, 1);
+    var t2 = getTabName(prev);
+    if(availableTabs.indexOf(t2) >= 0) tabsNeeded.push(t2);
   } else if(period === 'month'){
-    if(selMo && selMo.value){
-      tabsNeeded = [tabFromMonthKey(selMo.value)];
-    } else {
-      var curTab2 = getTabName(n);
-      tabsNeeded = [curTab2];
-    }
+    tabsNeeded = [getTabName(n)];
+  } else if(period === 'lastmonth'){
+    var lm = new Date(n.getFullYear(), n.getMonth()-1, 1);
+    tabsNeeded = [getTabName(lm)];
+  } else if(period === 'all'){
+    tabsNeeded = availableTabs.slice();
+  } else {
+    // Specific month tab selected (e.g. 'Apr_2026')
+    tabsNeeded = [period];
   }
 
-  // Load any unloaded tabs, then render
+  // Load any tabs not yet in memory
   var toLoad = tabsNeeded.filter(function(t){ return t && !loadedTabs[t]; });
   if(toLoad.length > 0){
     var pending = toLoad.length;
@@ -1228,8 +1229,39 @@ function renderTotals(){
   doRenderTotals();
 }
 
+// Populate dropdown with static options + available month tabs
+function populateTotalsDropdown(){
+  var sel = document.getElementById('totPer');
+  if(!sel) return;
+  var cur = sel.value || 'month';
+
+  // Build options: fixed periods first, then month tabs from Sheets
+  var opts = [
+    '<option value="week">This Week</option>',
+    '<option value="lastweek">Last Week</option>',
+    '<option value="month">This Month</option>',
+    '<option value="lastmonth">Last Month</option>',
+  ];
+
+  // Add available month tabs sorted newest first
+  if(availableTabs.length > 0){
+    opts.push('<option disabled style="color:var(--mut)">── Past Months ──</option>');
+    availableTabs.forEach(function(tab){
+      opts.push('<option value="'+tab+'">'+tabToLabel(tab)+'</option>');
+    });
+  }
+
+  opts.push('<option value="all">All Time</option>');
+
+  sel.innerHTML = opts.join('');
+  // Restore selected value
+  sel.value = cur;
+  if(!sel.value) sel.value = 'month';
+}
+
+
 function doRenderTotals(){
-  populateMonthDropdown();
+  populateTotalsDropdown();
   var period=document.getElementById('totPer').value;
   var el=document.getElementById('totContent');
   var all=getPE(period);
@@ -1316,7 +1348,7 @@ function doRenderTotals(){
   el.innerHTML=html;
 }
 
-function populateMonthDropdown(){
+function populateTotalsDropdown(){
   var sel=document.getElementById('totMonth');
   if(!sel) return;
   var all=[];
@@ -1357,47 +1389,70 @@ function parseEntryDate(dateStr){
 }
 
 function getPE(period){
-  var all=[];
-  archive.forEach(function(d){all=all.concat(d.entries);});
-  all=all.concat(queue);
-  // Filter out entries with no date or customer
-  all=all.filter(function(e){return e.date&&e.customer;});
-  var n=new Date();
-  var today=new Date(n.getFullYear(),n.getMonth(),n.getDate()); // midnight today
+  var all = [];
+  archive.forEach(function(d){ all = all.concat(d.entries); });
+  all = all.concat(queue);
+  all = all.filter(function(e){ return e.date && e.customer; });
 
-  if(period==='all') return all;
+  var n = new Date();
+  var today = new Date(n.getFullYear(), n.getMonth(), n.getDate());
 
-  if(period==='today'){
-    var todStr=n.toLocaleDateString('en-US',{month:'2-digit',day:'2-digit',year:'numeric'});
-    return all.filter(function(e){return e.date===todStr;});
-  }
-
-  if(period==='week'){
-    var weekAgo=new Date(today.getTime()-6*24*60*60*1000); // last 7 days inclusive
+  if(period === 'week'){
+    // Mon–Sun of current week
+    var dayOfWeek = today.getDay(); // 0=Sun
+    var weekStart = new Date(today.getTime() - ((dayOfWeek === 0 ? 6 : dayOfWeek-1) * 24*60*60*1000));
+    var weekEnd   = new Date(weekStart.getTime() + 6*24*60*60*1000);
     return all.filter(function(e){
-      var d=parseEntryDate(e.date);
-      return d&&d>=weekAgo&&d<=today;
+      var d = parseEntryDate(e.date);
+      return d && d >= weekStart && d <= weekEnd;
     });
   }
 
-  // period === 'month'
-  var selMo=document.getElementById('totMonth');
-  if(selMo&&selMo.value){
-    // Specific month selected from dropdown (format: YYYY-MM)
-    var parts=selMo.value.split('-');
-    var filterYr=parseInt(parts[0]);
-    var filterMo=parseInt(parts[1]);
+  if(period === 'lastweek'){
+    var dayOfWeek2 = today.getDay();
+    var thisWeekStart = new Date(today.getTime() - ((dayOfWeek2 === 0 ? 6 : dayOfWeek2-1) * 24*60*60*1000));
+    var lastWeekStart = new Date(thisWeekStart.getTime() - 7*24*60*60*1000);
+    var lastWeekEnd   = new Date(thisWeekStart.getTime() - 24*60*60*1000);
     return all.filter(function(e){
-      var d=parseEntryDate(e.date);
-      return d&&d.getFullYear()===filterYr&&(d.getMonth()+1)===filterMo;
+      var d = parseEntryDate(e.date);
+      return d && d >= lastWeekStart && d <= lastWeekEnd;
     });
   }
-  // Default: current month
-  return all.filter(function(e){
-    var d=parseEntryDate(e.date);
-    return d&&d.getFullYear()===n.getFullYear()&&(d.getMonth()+1)===(n.getMonth()+1);
-  });
+
+  if(period === 'month'){
+    return all.filter(function(e){
+      var d = parseEntryDate(e.date);
+      return d && d.getFullYear() === n.getFullYear() && d.getMonth() === n.getMonth();
+    });
+  }
+
+  if(period === 'lastmonth'){
+    var lm = new Date(n.getFullYear(), n.getMonth()-1, 1);
+    return all.filter(function(e){
+      var d = parseEntryDate(e.date);
+      return d && d.getFullYear() === lm.getFullYear() && d.getMonth() === lm.getMonth();
+    });
+  }
+
+  if(period === 'all') return all;
+
+  // Specific tab selected (e.g. 'Apr_2026') — filter by month/year
+  var parts = period.split('_');
+  if(parts.length === 2){
+    var moNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    var tabMo = moNames.indexOf(parts[0]); // 0-based
+    var tabYr = parseInt(parts[1]);
+    if(tabMo >= 0 && !isNaN(tabYr)){
+      return all.filter(function(e){
+        var d = parseEntryDate(e.date);
+        return d && d.getFullYear() === tabYr && d.getMonth() === tabMo;
+      });
+    }
+  }
+
+  return all;
 }
+
 function exportAll(){if(!queue.length){toast('Nothing to export');return;}cpTsv(queue);toast('✓ '+queue.length+' rows copied');}
 function cpTsv(entries){var rows=entries.map(function(e){return eRow(e).join('\t');}).join('\n');if(navigator.clipboard)navigator.clipboard.writeText(rows);else{var ta=document.createElement('textarea');ta.value=rows;ta.style.cssText='position:fixed;opacity:0';document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);}}
 function renderCusts(){

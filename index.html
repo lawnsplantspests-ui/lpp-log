@@ -394,7 +394,7 @@ if (!SV) SV = JSON.parse(JSON.stringify(DEFAULT_SV));
 
 window.onload = function(){
   clock(); setInterval(clock,15000); fetchWx();
-  renderLog(); renderArchive();
+  renderLog();
   populateSiteDropdown();
   updateAllSiteDropdowns();
   setSUI('go','loading…');
@@ -1036,7 +1036,12 @@ function addEntry(){var cust=document.getElementById('cSel').value;var svc=docum
   if(bf){bf.style.background='var(--gdim)';bf.style.color='#fff';bf.style.borderColor='var(--gdim)';}
   if(bs){bs.style.background='var(--sur)';bs.style.color='var(--dim)';bs.style.borderColor='var(--bdr)';}document.getElementById('nts').value='';document.getElementById('pcard').classList.remove('show');document.getElementById('sqFld').className='fld';document.getElementById('sqLbl').textContent='LAWN SQ FT';document.getElementById('sqIn').style.cssText='';document.getElementById('totPreview').style.display='none';goTab('log');}
 function eRow(e){return[e.date,e.time,e.customer,e.sqFt,e.service,e.product,e.activeIng,e.epa,e.targetPest,e.appSite,e.method,e.rate,e.totalMixed,e.sqFt,e.totalUsed,e.spotSqFt||'',e.weather,e.wind,e.temp,e.notes,'Devon Alleman','608542 / BU 14521'];}
-function getTab(){var n=new Date();return n.toLocaleDateString('en-US',{month:'short',year:'numeric'}).replace(' ','_');}
+function getTabName(date){
+  var d = date || new Date();
+  var months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return months[d.getMonth()]+'_'+d.getFullYear();
+}
+function getTab(){return getTabName(new Date());}
 function renderLog(){var list=document.getElementById('logList'),empty=document.getElementById('logEmpty'),bar=document.getElementById('ebar'),bdg=document.getElementById('logBdg'),cnt=document.getElementById('eCnt');bdg.textContent=queue.length;bdg.className='bdg'+(queue.length?' show':'');cnt.textContent=queue.length+' entr'+(queue.length===1?'y':'ies')+' today';if(!queue.length){empty.style.display='block';list.innerHTML='';bar.className='ebar';return;}empty.style.display='none';bar.className='ebar show';list.innerHTML=queue.map(function(e,i){return'<div class="qi"><div class="qi-body'+(e.synced?'':' pend')+'">'+'<div class="qi-top"><div class="qi-name">'+e.customer+'</div><div style="display:flex;align-items:center;gap:5px"><span class="qi-time">'+e.time+'</span>'+(e.synced?'':'<button class="btn-del" onclick="removeEntry('+i+')">×</button>')+'</div></div>'+'<div class="qi-svc">'+e.service+'</div>'+'<div class="qi-pills"><span class="qp g">'+e.date+'</span><span class="qp'+(e.weather?'':' y')+'">'+(e.weather||'No weather')+'</span><span class="qp">'+(e.temp||'—')+'</span><span class="qp">'+e.appSite+'</span>'+(e.synced?'<span class="qp g">☁ synced</span>':'<span class="qp y">⏳ pending</span>')+'</div>'+(e.totalUsed?'<div style="font-size:11px;font-family:var(--mono);color:var(--grn);margin-bottom:8px">Total used: '+e.totalUsed+'</div>':'')+'<div class="qi-sq"><label>SQ FT:</label><input class="sq-inp'+(e.sqFt?' sv':'')+'" type="number" value="'+(e.sqFt||'')+'" placeholder="enter sq ft" onchange="updateSq('+i+',this)"><span class="flash" id="sf-'+i+'">✓</span></div>'+'</div></div>';}).join('');}
 function updateSq(i,el){var val=el.value.trim();queue[i].sqFt=val;var ci=custDB.findIndex(function(c){return c.name===queue[i].customer;});if(ci>=0&&val){custDB[ci].sqFt=val;saveC();renderCusts();}saveQ();el.className='sq-inp'+(val?' sv':'');var f=document.getElementById('sf-'+i);if(f){f.className='flash show';setTimeout(function(){f.className='flash';},2000);}}
 function removeEntry(i){queue.splice(i,1);saveQ();renderLog();}
@@ -1173,24 +1178,24 @@ function renderTotals(){
     tabsNeeded = availableTabs.slice();
   } else if(period === 'today' || period === 'week'){
     // Current month + possibly previous month (for week spanning month boundary)
-    var curTab = n.toLocaleDateString('en-US',{month:'short',year:'numeric'}).replace(' ','_');
+    var curTab = getTabName(n);
     tabsNeeded = [curTab];
     if(period === 'week'){
       var prev = new Date(n.getFullYear(), n.getMonth()-1, 1);
-      var prevTab = prev.toLocaleDateString('en-US',{month:'short',year:'numeric'}).replace(' ','_');
+      var prevTab = getTabName(prev);
       if(availableTabs.indexOf(prevTab) >= 0) tabsNeeded.push(prevTab);
     }
   } else if(period === 'month'){
     if(selMo && selMo.value){
       tabsNeeded = [tabFromMonthKey(selMo.value)];
     } else {
-      var curTab2 = n.toLocaleDateString('en-US',{month:'short',year:'numeric'}).replace(' ','_');
+      var curTab2 = getTabName(n);
       tabsNeeded = [curTab2];
     }
   }
 
   // Load any unloaded tabs, then render
-  var toLoad = tabsNeeded.filter(function(t){ return t && !loadedTabs[t] && availableTabs.indexOf(t)>=0; });
+  var toLoad = tabsNeeded.filter(function(t){ return t && !loadedTabs[t]; });
   if(toLoad.length > 0){
     var pending = toLoad.length;
     toLoad.forEach(function(tab){

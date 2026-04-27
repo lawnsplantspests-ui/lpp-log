@@ -502,52 +502,62 @@ function fillProdFromLib(sel){fillEditLib(sel);}
 
 function restoreArchiveFromSheets(){
   setSUI('go','restoring archive…');
-  // Step 1: get list of all log tabs from Sheets
   api({action:'getLogTabs'},
     function(d){
       var tabs=d.tabs||[];
       if(!tabs.length){
         setSUI('ok','synced ✓');
-        toast('No log data found in Google Sheets');
+        renderArchive();renderTotals();
         return;
       }
-      // Step 2: fetch every tab
       var pending=tabs.length;
-      var restored=0;
+      var totalRestored=0;
+
       tabs.forEach(function(tab){
         api({action:'getLog',tab:tab},
           function(r){
             if(r.entries&&r.entries.length){
               r.entries.forEach(function(entry){
-                if(!entry.date||!entry.customer) return; // skip empty rows
+                // Skip invalid entries
+                if(!entry.date||!entry.customer) return;
+                // Validate date format MM/DD/YYYY
+                var p=entry.date.split('/');
+                if(p.length!==3||!p[0]||!p[1]||!p[2]) return;
                 var dayKey=entry.date;
                 var ex=archive.findIndex(function(a){return a.date===dayKey;});
                 if(ex>=0){
-                  // Add to existing day — avoid duplicates
+                  // Add to existing day — avoid duplicates by id
                   var ids=new Set(archive[ex].entries.map(function(e){return String(e.id);}));
-                  if(!ids.has(String(entry.id))) archive[ex].entries.push(entry);
+                  if(!ids.has(String(entry.id))){
+                    archive[ex].entries.push(entry);
+                    totalRestored++;
+                  }
                 } else {
                   archive.push({date:dayKey,entries:[entry]});
+                  totalRestored++;
                 }
-                restored++;
               });
             }
             pending--;
             if(pending===0){
+              // Sort archive by date newest first
+              archive.sort(function(a,b){
+                var pa=a.date.split('/'),pb=b.date.split('/');
+                var da=new Date(pa[2],pa[0]-1,pa[1]);
+                var db=new Date(pb[2],pb[0]-1,pb[1]);
+                return db-da;
+              });
               saveA();
               renderArchive();
               renderTotals();
               setSUI('ok','synced ✓');
-              if(restored>0) toast('\u2713 Restored '+restored+' entries from '+tabs.length+' months');
-              else toast('Archive up to date');
+              if(totalRestored>0) toast('✓ Synced '+totalRestored+' entries from '+tabs.length+' month'+(tabs.length!==1?'s':''));
             }
           },
           function(){
             pending--;
             if(pending===0){
-              saveA();
-              renderArchive();
-              renderTotals();
+              saveA();renderArchive();renderTotals();
               setSUI('ok','synced ✓');
             }
           }
@@ -556,9 +566,8 @@ function restoreArchiveFromSheets(){
     },
     function(){
       setSUI('err','offline');
-      toast('\u26a0 Could not reach Google Sheets — using cached archive');
-      renderArchive();
-      renderTotals();
+      renderArchive();renderTotals();
+      toast('⚠ Offline — showing cached archive');
     }
   );
 }
@@ -1045,7 +1054,15 @@ function archiveDay(){
   queue=[];saveQ();renderLog();renderArchive();renderTotals();
   toast('✓ '+today+' archived permanently');
 }
-function renderArchive(){var list=document.getElementById('archList'),empty=document.getElementById('archEmpty');if(!archive.length){empty.style.display='block';list.innerHTML='';return;}empty.style.display='none';var months={};archive.forEach(function(day){var p=day.date.split('/');var k=p[2]+'-'+(p[0].length<2?'0':'')+p[0];if(!months[k])months[k]={label:moL(p[0],p[2]),days:[]};months[k].days.push(day);});list.innerHTML=Object.keys(months).sort().reverse().map(function(mk){var mo=months[mk];var total=mo.days.reduce(function(s,d){return s+d.entries.length;},0);return'<div class="arch-month"><div class="arch-hdr" onclick="tA(\''+mk+'\')">'+'<div><h3>'+mo.label+'</h3><p>'+mo.days.length+' day'+(mo.days.length!==1?'s':'')+' · '+total+' apps</p></div>'+'<div style="display:flex;align-items:center;gap:7px"><span class="arch-bdg">'+total+'</span><span>▾</span></div></div>'+'<div class="arch-body" id="ab-'+mk+'">'+mo.days.sort(function(a,b){return a.date.localeCompare(b.date);}).map(function(day){return'<div style="margin-bottom:10px"><div style="font-size:11px;font-family:var(--mono);color:var(--dim);margin-bottom:5px">'+day.date+' — '+day.entries.length+' entries</div>'+day.entries.map(function(e){return'<div class="arch-entry"><b>'+e.customer+'</b><span>'+e.service+(e.sqFt?' · '+Number(e.sqFt).toLocaleString()+' sqft':'')+(e.totalUsed?' · '+e.totalUsed:'')+'</span></div>';}).join('')+'</div>';}).join('')+'<div class="arch-foot"><button class="btn-sm" onclick="exMo(\''+mk+'\')">Copy '+mo.label+' → Excel</button></div></div></div>';}).join('');}
+function renderArchive(){var list=document.getElementById('archList'),empty=document.getElementById('archEmpty');if(!archive.length){empty.style.display='block';list.innerHTML='';return;}empty.style.display='none';var months={};archive.forEach(function(day){
+    if(!day.date) return; // skip invalid
+    var p=day.date.split('/');
+    if(p.length!==3||!p[0]||!p[2]) return; // skip malformed dates
+    var mo=p[0].length<2?'0'+p[0]:p[0];
+    var k=p[2]+'-'+mo;
+    if(!months[k]) months[k]={label:moL(p[0],p[2]),days:[]};
+    months[k].days.push(day);
+  });list.innerHTML=Object.keys(months).sort().reverse().map(function(mk){var mo=months[mk];var total=mo.days.reduce(function(s,d){return s+d.entries.length;},0);return'<div class="arch-month"><div class="arch-hdr" onclick="tA(\''+mk+'\')">'+'<div><h3>'+mo.label+'</h3><p>'+mo.days.length+' day'+(mo.days.length!==1?'s':'')+' · '+total+' apps</p></div>'+'<div style="display:flex;align-items:center;gap:7px"><span class="arch-bdg">'+total+'</span><span>▾</span></div></div>'+'<div class="arch-body" id="ab-'+mk+'">'+mo.days.sort(function(a,b){return a.date.localeCompare(b.date);}).map(function(day){return'<div style="margin-bottom:10px"><div style="font-size:11px;font-family:var(--mono);color:var(--dim);margin-bottom:5px">'+day.date+' — '+day.entries.length+' entries</div>'+day.entries.map(function(e){return'<div class="arch-entry"><b>'+e.customer+'</b><span>'+e.service+(e.sqFt?' · '+Number(e.sqFt).toLocaleString()+' sqft':'')+(e.totalUsed?' · '+e.totalUsed:'')+'</span></div>';}).join('')+'</div>';}).join('')+'<div class="arch-foot"><button class="btn-sm" onclick="exMo(\''+mk+'\')">Copy '+mo.label+' → Excel</button></div></div></div>';}).join('');}
 function tA(mk){document.getElementById('ab-'+mk).classList.toggle('open');}
 function moL(m,y){var n=['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];return n[parseInt(m)]+' '+y;}
 function exMo(mk){var p=mk.split('-');var all=[];archive.filter(function(a){var q=a.date.split('/');return q[2]===p[0]&&(q[0].length<2?'0':'')+q[0]===p[1];}).forEach(function(d){all=all.concat(d.entries);});if(!all.length){toast('No entries');return;}cpTsv(all);toast('✓ '+all.length+' rows copied');}
@@ -1145,52 +1162,79 @@ function populateMonthDropdown(){
   archive.forEach(function(d){all=all.concat(d.entries);});
   var months={};
   all.forEach(function(e){
+    if(!e.date||!e.customer) return;
     var p=e.date.split('/');
-    var k=p[2]+'-'+(p[0].length<2?'0':'')+p[0];
-    months[k]=moL(p[0],p[2]);
+    if(p.length!==3||!p[0]||!p[2]) return;
+    var mo=p[0].length<2?'0'+p[0]:p[0];
+    var k=p[2]+'-'+mo;
+    if(!months[k]) months[k]=moL(p[0],p[2]);
   });
   var keys=Object.keys(months).sort().reverse();
   var cur=sel.value||'';
   sel.innerHTML='<option value="">All Months</option>'
-    +keys.map(function(k){return'<option value="'+k+'"'+(k===cur?' selected':'')+'>'+months[k]+'</option>';}).join('');
-  // Show/hide month selector based on period
+    +keys.map(function(k){
+      return '<option value="'+k+'"'+(k===cur?' selected':'')+'>'+months[k]+'</option>';
+    }).join('');
+  if(cur) sel.value=cur;
+  // Show/hide month label and selector
   var period=document.getElementById('totPer').value;
   var monthLabel=document.getElementById('totMonthLabel');
-  if(monthLabel) monthLabel.style.display=(period==='month'||period==='all')?'':'none';
-  sel.style.display=(period==='month'||period==='all')?'':'none';
+  var show=(period==='month'||period==='all');
+  if(monthLabel) monthLabel.style.display=show?'':'none';
+  sel.style.display=show?'':'none';
 }
 
+
+function parseEntryDate(dateStr){
+  // Safely parse MM/DD/YYYY date string
+  if(!dateStr) return null;
+  var p=dateStr.split('/');
+  if(p.length!==3) return null;
+  var mo=parseInt(p[0]),day=parseInt(p[1]),yr=parseInt(p[2]);
+  if(isNaN(mo)||isNaN(day)||isNaN(yr)) return null;
+  return new Date(yr,mo-1,day);
+}
 
 function getPE(period){
   var all=[];
   archive.forEach(function(d){all=all.concat(d.entries);});
   all=all.concat(queue);
+  // Filter out entries with no date or customer
+  all=all.filter(function(e){return e.date&&e.customer;});
   var n=new Date();
+  var today=new Date(n.getFullYear(),n.getMonth(),n.getDate()); // midnight today
+
   if(period==='all') return all;
+
   if(period==='today'){
-    var tod=n.toLocaleDateString('en-US',{month:'2-digit',day:'2-digit',year:'numeric'});
-    return all.filter(function(e){return e.date===tod;});
+    var todStr=n.toLocaleDateString('en-US',{month:'2-digit',day:'2-digit',year:'numeric'});
+    return all.filter(function(e){return e.date===todStr;});
   }
+
   if(period==='week'){
-    var weekAgo=new Date(n.getTime()-7*24*60*60*1000);
+    var weekAgo=new Date(today.getTime()-6*24*60*60*1000); // last 7 days inclusive
     return all.filter(function(e){
-      var p=e.date.split('/');
-      var d=new Date(parseInt(p[2]),parseInt(p[0])-1,parseInt(p[1]));
-      return d>=weekAgo;
+      var d=parseEntryDate(e.date);
+      return d&&d>=weekAgo&&d<=today;
     });
   }
-  // month — check specific month selector first
+
+  // period === 'month'
   var selMo=document.getElementById('totMonth');
   if(selMo&&selMo.value){
+    // Specific month selected from dropdown (format: YYYY-MM)
     var parts=selMo.value.split('-');
+    var filterYr=parseInt(parts[0]);
+    var filterMo=parseInt(parts[1]);
     return all.filter(function(e){
-      var p=e.date.split('/');
-      return p[2]===parts[0]&&(p[0].length<2?'0':'')+p[0]===parts[1];
+      var d=parseEntryDate(e.date);
+      return d&&d.getFullYear()===filterYr&&(d.getMonth()+1)===filterMo;
     });
   }
+  // Default: current month
   return all.filter(function(e){
-    var p=e.date.split('/');
-    return parseInt(p[0])===n.getMonth()+1&&parseInt(p[2])===n.getFullYear();
+    var d=parseEntryDate(e.date);
+    return d&&d.getFullYear()===n.getFullYear()&&(d.getMonth()+1)===(n.getMonth()+1);
   });
 }
 function exportAll(){if(!queue.length){toast('Nothing to export');return;}cpTsv(queue);toast('✓ '+queue.length+' rows copied');}

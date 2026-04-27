@@ -470,9 +470,9 @@ function loadAll() {
         productLib = JSON.parse(localStorage.getItem('pda_lib_cache') || '[]');
       }
       buildDD(); renderCusts(); renderProds(); renderLibProducts(); populateLibDDs();
-      // If archive is empty, restore from Sheets
-      if(!archive.length) restoreArchiveFromSheets();
-      else { renderArchive(); renderTotals(); }
+      // Always restore from Sheets to get latest entries
+      // (merges new entries, skips duplicates)
+      restoreArchiveFromSheets();
       setSUI('ok','synced ✓');
       var bar = document.getElementById('offlineBar');
       if (bar) bar.style.display = 'none';
@@ -501,64 +501,68 @@ function fillProdFromLib(sel){fillEditLib(sel);}
 
 
 function restoreArchiveFromSheets(){
-  // Called on load when archive is empty — fetches last 3 months from Sheets
   setSUI('go','restoring archive…');
-  var months=[];
-  var n=new Date();
-  for(var i=0;i<3;i++){
-    var d=new Date(n.getFullYear(),n.getMonth()-i,1);
-    months.push(d.toLocaleDateString('en-US',{month:'short',year:'numeric'}).replace(' ','_'));
-  }
-  var pending=months.length;
-  var restored=0;
-  months.forEach(function(tab){
-    api({action:'getLog',tab:tab},
-      function(d){
-        if(d.entries&&d.entries.length){
-          d.entries.forEach(function(entry){
-            if(!entry.date) return;
-            var p=entry.date.split('/');
-            if(p.length<3) return;
-            var dayKey=entry.date;
-            var ex=archive.findIndex(function(a){return a.date===dayKey;});
-            if(ex>=0){
-              // Merge — avoid duplicates by id
-              var ids=new Set(archive[ex].entries.map(function(e){return e.id;}));
-              if(!ids.has(entry.id)) archive[ex].entries.push(entry);
-            } else {
-              // Group by day
-              var mo=archive.findIndex(function(a){
-                return a.entries&&a.entries.length&&a.entries[0].date===dayKey;
-              });
-              if(mo<0) archive.push({date:dayKey,entries:[entry]});
-            }
-            restored++;
-          });
-        }
-        pending--;
-        if(pending===0){
-          saveA();
-          renderArchive();
-          renderTotals();
-          if(restored>0){
-            setSUI('ok','synced ✓');
-            toast('✓ Restored '+restored+' entries from Google Sheets');
-          } else {
-            setSUI('ok','synced ✓');
-          }
-        }
-      },
-      function(){
-        pending--;
-        if(pending===0){
-          renderArchive();
-          renderTotals();
-          setSUI('ok','synced ✓');
-        }
+  // Step 1: get list of all log tabs from Sheets
+  api({action:'getLogTabs'},
+    function(d){
+      var tabs=d.tabs||[];
+      if(!tabs.length){
+        setSUI('ok','synced ✓');
+        toast('No log data found in Google Sheets');
+        return;
       }
-    );
-  });
+      // Step 2: fetch every tab
+      var pending=tabs.length;
+      var restored=0;
+      tabs.forEach(function(tab){
+        api({action:'getLog',tab:tab},
+          function(r){
+            if(r.entries&&r.entries.length){
+              r.entries.forEach(function(entry){
+                if(!entry.date||!entry.date.match(/\d+\/\d+\/\d+/)) return;
+                var dayKey=entry.date;
+                var ex=archive.findIndex(function(a){return a.date===dayKey;});
+                if(ex>=0){
+                  // Add to existing day — avoid duplicates
+                  var ids=new Set(archive[ex].entries.map(function(e){return String(e.id);}));
+                  if(!ids.has(String(entry.id))) archive[ex].entries.push(entry);
+                } else {
+                  archive.push({date:dayKey,entries:[entry]});
+                }
+                restored++;
+              });
+            }
+            pending--;
+            if(pending===0){
+              saveA();
+              renderArchive();
+              renderTotals();
+              setSUI('ok','synced ✓');
+              if(restored>0) toast('\u2713 Restored '+restored+' entries from '+tabs.length+' months');
+              else toast('Archive up to date');
+            }
+          },
+          function(){
+            pending--;
+            if(pending===0){
+              saveA();
+              renderArchive();
+              renderTotals();
+              setSUI('ok','synced ✓');
+            }
+          }
+        );
+      });
+    },
+    function(){
+      setSUI('err','offline');
+      toast('\u26a0 Could not reach Google Sheets — using cached archive');
+      renderArchive();
+      renderTotals();
+    }
+  );
 }
+
 
 function fetchMonthFromSheets(){
   setSUI('go','loading from Sheets…');

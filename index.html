@@ -188,6 +188,11 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans)}
     <label>SPOT SPRAY SQ FT <small>— herbicide/pesticide area only (product 2+)</small></label>
     <input type="number" id="spotSqIn" placeholder="e.g. 2500" min="0" step="100" oninput="updateTotalsPreview()">
   </div>
+  <!-- One-time sq ft for services that don't save sq ft (yellow jackets, mosquito, bare ground spot etc.) -->
+  <div class="fld" id="onetimeSqFld" style="display:none">
+    <label id="onetimeSqLbl">AREA TREATED SQ FT <small>— required each visit, not saved to customer</small></label>
+    <input type="number" id="onetimeSqIn" placeholder="enter sq ft for this treatment" min="0" step="100" oninput="updateTotalsPreview()">
+  </div>
   <div id="sqCatFlds">
     <div class="fld sq-cat" id="sqLawnFld" style="display:none">
       <label id="sqLawnLbl">LAWN SQ FT</label>
@@ -465,6 +470,9 @@ function loadAll() {
         productLib = JSON.parse(localStorage.getItem('pda_lib_cache') || '[]');
       }
       buildDD(); renderCusts(); renderProds(); renderLibProducts(); populateLibDDs();
+      // If archive is empty, restore from Sheets
+      if(!archive.length) restoreArchiveFromSheets();
+      else { renderArchive(); renderTotals(); }
       setSUI('ok','synced ✓');
       var bar = document.getElementById('offlineBar');
       if (bar) bar.style.display = 'none';
@@ -492,32 +500,69 @@ function fillProdFromLib(sel){fillEditLib(sel);}
 
 
 
-function fetchMonthFromSheets(){
+function restoreArchiveFromSheets(){
+  // Called on load when archive is empty — fetches last 3 months from Sheets
+  setSUI('go','restoring archive…');
+  var months=[];
   var n=new Date();
-  var tab=n.toLocaleDateString('en-US',{month:'short',year:'numeric'}).replace(' ','_');
-  setSUI('go','loading from Sheets…');
-  api({action:'getLog', tab:tab},
-    function(d){
-      if(d.entries&&d.entries.length){
-        var today=n.toLocaleDateString('en-US',{month:'2-digit',day:'2-digit',year:'numeric'});
-        var ex=archive.findIndex(function(a){return a.date===today;});
-        if(ex>=0) archive[ex].entries=d.entries;
-        else archive.push({date:today,entries:d.entries});
-        saveA();
-        renderTotals();
-        renderArchive();
-        setSUI('ok','synced ✓');
-        toast('✓ Loaded '+d.entries.length+' entries from Sheets');
-      } else {
-        setSUI('ok','synced ✓');
-        toast('No entries found in Sheets for '+tab);
+  for(var i=0;i<3;i++){
+    var d=new Date(n.getFullYear(),n.getMonth()-i,1);
+    months.push(d.toLocaleDateString('en-US',{month:'short',year:'numeric'}).replace(' ','_'));
+  }
+  var pending=months.length;
+  var restored=0;
+  months.forEach(function(tab){
+    api({action:'getLog',tab:tab},
+      function(d){
+        if(d.entries&&d.entries.length){
+          d.entries.forEach(function(entry){
+            if(!entry.date) return;
+            var p=entry.date.split('/');
+            if(p.length<3) return;
+            var dayKey=entry.date;
+            var ex=archive.findIndex(function(a){return a.date===dayKey;});
+            if(ex>=0){
+              // Merge — avoid duplicates by id
+              var ids=new Set(archive[ex].entries.map(function(e){return e.id;}));
+              if(!ids.has(entry.id)) archive[ex].entries.push(entry);
+            } else {
+              // Group by day
+              var mo=archive.findIndex(function(a){
+                return a.entries&&a.entries.length&&a.entries[0].date===dayKey;
+              });
+              if(mo<0) archive.push({date:dayKey,entries:[entry]});
+            }
+            restored++;
+          });
+        }
+        pending--;
+        if(pending===0){
+          saveA();
+          renderArchive();
+          renderTotals();
+          if(restored>0){
+            setSUI('ok','synced ✓');
+            toast('✓ Restored '+restored+' entries from Google Sheets');
+          } else {
+            setSUI('ok','synced ✓');
+          }
+        }
+      },
+      function(){
+        pending--;
+        if(pending===0){
+          renderArchive();
+          renderTotals();
+          setSUI('ok','synced ✓');
+        }
       }
-    },
-    function(){
-      setSUI('err','offline');
-      toast('⚠ Could not reach Google Sheets');
-    }
-  );
+    );
+  });
+}
+
+function fetchMonthFromSheets(){
+  setSUI('go','loading from Sheets…');
+  restoreArchiveFromSheets();
 }
 
 function saveSV() {
@@ -652,7 +697,9 @@ function getSvcCat(svcName){
   if(n.indexOf('pest')===0) return 'pest';
   if(n.indexOf('aquatic')===0||n.indexOf('pond')===0||n.indexOf('creek')===0) return 'aquatic';
   if(n.indexOf('bare ground')===0||n.indexOf('bare-ground')===0) return 'bare';
-  if(n.indexOf('yellow jacket')===0||n.indexOf('wasp')===0||n.indexOf('bait')===0) return 'spot';
+  // These services always require sq ft entry but never save it to customer
+  if(n.indexOf('yellow')===0||n.indexOf('wasp')===0||n.indexOf('bait')===0
+     ||n.indexOf('mosquito')===0||n.indexOf('tick')===0) return 'onetime';
   return 'lawn'; // default
 }
 
@@ -815,42 +862,62 @@ function c2c(c){if(c===0)return'Clear';if(c<=2)return'Partly Cloudy';if(c===3)re
 function m2d(m){if(m<=3)return'Calm (0-3 mph)';if(m<=7)return'Light (4-7 mph)';if(m<=12)return'Moderate (8-12 mph)';return'13+ mph';}
 function onCust(){
   var name=document.getElementById('cSel').value;
-  if(!name){hideSqFlds();return;}
   var svc=document.getElementById('sSel').value;
-  var cat=svc?getSvcCat(svc):'lawn';
-  showSqForCat(name, cat);
+  if(!name && !svc){ hideSqFlds(); return; }
+  if(svc){
+    var cat=getSvcCat(svc);
+    showSqForCat(name, cat);
+  } else {
+    hideSqFlds();
+  }
   updateTotalsPreview();
 }
 function hideSqFlds(){
   document.querySelectorAll('.sq-cat').forEach(function(f){f.style.display='none';});
 }
 function showSqForCat(custName, cat){
-  // Hide ALL sq ft fields first
+  // Hide all standard sq ft fields and one-time field
   hideSqFlds();
+  var ot = document.getElementById('onetimeSqFld');
+  if(ot){ ot.style.display='none'; var oi=document.getElementById('onetimeSqIn'); if(oi) oi.value=''; }
+
   if(!cat) return;
 
-  // Map category to its specific field only
+  // 'onetime' services (yellow jackets, mosquito, bait stations etc.)
+  // Always show one-time entry field — never shows customer sq ft, never saves
+  if(cat === 'onetime'){
+    if(ot){
+      ot.style.display='block';
+      var lbl=document.getElementById('onetimeSqLbl');
+      if(lbl) lbl.textContent='AREA TREATED SQ FT — required (not saved to customer)';
+      var inp=document.getElementById('onetimeSqIn');
+      if(inp){ inp.placeholder='enter sq ft for this treatment'; inp.style.borderColor='var(--red)'; }
+    }
+    return;
+  }
+
+  // Standard categories — show only the matching field
   var map={
     lawn:   {fld:'sqLawnFld',   inp:'sqLawn',    label:'LAWN SQ FT'},
     phc:    {fld:'sqPHCFld',    inp:'sqPHC',     label:'PHC SQ FT'},
     pest:   {fld:'sqPestFld',   inp:'sqPest',    label:'PEST CONTROL SQ FT'},
     aquatic:{fld:'sqAquaticFld',inp:'sqAquatic', label:'AQUATIC SQ FT'},
-    bare:   {fld:'sqLawnFld',   inp:'sqLawn',    label:'BARE GROUND SQ FT'},
-    spot:   {fld:'sqPestFld',   inp:'sqPest',    label:'AREA TREATED SQ FT'}
+    bare:   {fld:'sqLawnFld',   inp:'sqLawn',    label:'BARE GROUND SQ FT'}
   };
-  var m = map[cat] || map.lawn;
+  var m = map[cat];
+  if(!m) return;
+
   var fld = document.getElementById(m.fld);
   var inp = document.getElementById(m.inp);
   if(!fld || !inp) return;
 
-  // Show ONLY this field
   fld.style.display = 'block';
   fld.style.borderColor = '';
   inp.value = '';
   inp.style.cssText = '';
 
   var lbl = fld.querySelector('label');
-  var val = custName ? getCustSq(custName, cat) : '';
+  var val = (custName && cat !== 'onetime') ? getCustSq(custName, cat) : '';
 
   if(val && val !== '0'){
     if(lbl) lbl.textContent = m.label + ' — on file: ' + Number(val).toLocaleString() + ' sqft';
@@ -858,11 +925,10 @@ function showSqForCat(custName, cat){
     inp.style.color = 'var(--dim)';
     fld.className = 'fld sq-known';
   } else {
-    // No sq ft on file — required prompt
     if(lbl) lbl.textContent = m.label + ' — required';
     inp.placeholder = 'enter sq ft to continue';
-    fld.className = 'fld sq-needed';
     inp.style.borderColor = 'var(--red)';
+    fld.className = 'fld sq-needed';
   }
 }
 
@@ -886,38 +952,49 @@ function onSqCatType(cat){
   updateTotalsPreview();
 }
 function onSvc(){var s=document.getElementById('sSel').value;var card=document.getElementById('pcard'),grid=document.getElementById('pgrd'),note=document.getElementById('multiNote');if(!s||!SV[s]){card.classList.remove('show');return;}var d=SV[s];grid.innerHTML=[['Product',jn(d.products,'product')],['Active Ing',jn(d.products,'activeIng')],['EPA Reg #',jn(d.products,'epa')],['Rate',jn(d.products,'rate')],['Method',jn(d.products,'method')],['Target Pest',jn(d.products,'targetPest')],['App Site',d.appSite]].map(function(kv){return'<span class="pk">'+kv[0]+'</span><span class="pv">'+kv[1]+'</span>';}).join('');note.innerHTML=d.products.length>1?'<div class="multi-note">⚡ '+d.products.length+' products — combined into 1 log entry</div>':'';card.classList.add('show');populateSiteDropdown(d.appSite);
-  // Show correct sq ft field + spray toggle for lawn/bare ground services
+  // Show correct sq ft field — always show, even if no customer selected
   var custName=document.getElementById('cSel').value;
   var cat=getSvcCat(s);
-  // Spot spray only for Lawn Care category
   var sprayable = (cat === 'lawn');
   showSprayToggle(sprayable);
-  if(sprayMode==='full'&&custName) showSqForCat(custName, cat);
+  showSqForCat(custName, cat);
   updateTotalsPreview();}
 function addEntry(){var cust=document.getElementById('cSel').value;var svc=document.getElementById('sSel').value;if(!cust){toast('⚠ Select a customer');return;}if(!svc){toast('⚠ Select a service');return;}clock();var d=SV[svc];var svcCat=getSvcCat(svc);
-  var sqIds={lawn:'sqLawn',phc:'sqPHC',pest:'sqPest',aquatic:'sqAquatic',bare:'sqLawn'};
-  var sqEl=document.getElementById(sqIds[svcCat]||'sqLawn');
-  var enteredSqFt=sqEl?sqEl.value.trim():'';
-  var onFileSqFt=getCustSq(cust,svcCat)||'';
-  var sqFt=enteredSqFt||onFileSqFt;
-  // REQUIRED: block if no sq ft available
-  if(!sqFt){
-    var fld=document.getElementById({lawn:'sqLawnFld',phc:'sqPHCFld',pest:'sqPestFld',aquatic:'sqAquaticFld',bare:'sqLawnFld'}[svcCat]||'sqLawnFld');
-    if(fld){
-      fld.style.display='block';
-      fld.style.border='2px solid var(--red)';
-      var inp=fld.querySelector('input');
-      if(inp){inp.style.borderColor='var(--red)';inp.focus();}
+
+  // Get sq ft based on category
+  var sqFt='', enteredSqFt='', onFileSqFt='';
+
+  if(svcCat==='onetime'){
+    // One-time services: read from onetimeSqIn, never save
+    var otEl=document.getElementById('onetimeSqIn');
+    sqFt=otEl?otEl.value.trim():'';
+    if(!sqFt){
+      var otFld=document.getElementById('onetimeSqFld');
+      if(otFld){ otFld.style.display='block'; var oi=document.getElementById('onetimeSqIn'); if(oi){oi.style.borderColor='var(--red)';oi.focus();} }
+      toast('⚠ Area treated sq ft is required');
+      return;
     }
-    toast('⚠ Sq ft is required — enter area before submitting');
-    return;
+  } else {
+    var sqIds={lawn:'sqLawn',phc:'sqPHC',pest:'sqPest',aquatic:'sqAquatic',bare:'sqLawn'};
+    var sqEl=document.getElementById(sqIds[svcCat]||'sqLawn');
+    enteredSqFt=sqEl?sqEl.value.trim():'';
+    onFileSqFt=getCustSq(cust,svcCat)||'';
+    sqFt=enteredSqFt||onFileSqFt;
+    if(!sqFt){
+      var fldIds={lawn:'sqLawnFld',phc:'sqPHCFld',pest:'sqPestFld',aquatic:'sqAquaticFld',bare:'sqLawnFld'};
+      var fld=document.getElementById(fldIds[svcCat]||'sqLawnFld');
+      if(fld){ fld.style.display='block'; fld.style.borderColor='var(--red)'; var fi=fld.querySelector('input'); if(fi){fi.style.borderColor='var(--red)';fi.focus();} }
+      toast('⚠ Sq ft is required — enter area before submitting');
+      return;
+    }
+    // Save new value to customer record
+    if(enteredSqFt&&enteredSqFt!==onFileSqFt){
+      setCustSq(cust,svcCat,enteredSqFt);
+      renderCusts();
+    }
   }
-  // Save if new value entered
-  if(enteredSqFt&&enteredSqFt!==onFileSqFt){
-    setCustSq(cust,svcCat,enteredSqFt);
-    renderCusts();
-  }
-  // Spot spray sq ft
+
+  // Spot spray sq ft for product 2+
   var spotSqFt='';
   var spotEl=document.getElementById('spotSqIn');
   if(spotEl&&spotEl.style.display!=='none') spotSqFt=spotEl.value.trim();
@@ -927,12 +1004,14 @@ function addEntry(){var cust=document.getElementById('cSel').value;var svc=docum
     return calcTotal(p.rate,useSq);
   }).filter(Boolean);var tu=totals.join(' + ')||'';var entry={id:Date.now(),customer:cust,service:svc,date:document.getElementById('aDate').textContent,time:document.getElementById('aTime').textContent,sqFt:sqFt,spotSqFt:spotSqFt,totalUsed:tu,weather:document.getElementById('wxC').value,temp:wxTemp?(wxTemp+'°F'):'',wind:document.getElementById('wxW').value,product:combined.product,activeIng:combined.activeIng,epa:combined.epa,rate:combined.rate,totalMixed:combined.totalMixed,method:combined.method,targetPest:combined.targetPest,appSite:appSite,notes:userN?d.notes+' | '+userN:d.notes,synced:false};queue.push(entry);saveQ();renderLog();syncEntry(entry);toast('✓ Added to log');document.getElementById('cSel').value='';document.getElementById('sSel').value='';['sqLawn','sqPHC','sqPest','sqAquatic'].forEach(function(id){
     var el=document.getElementById(id);
-    if(el){el.value='';el.style.cssText='';el.placeholder='enter sq ft';}
+    if(el){el.value='';el.style.cssText='';}
   });
   hideSqFlds();
   showSprayToggle(false);
   sprayMode='full';
   var sp=document.getElementById('spotSqIn');if(sp){sp.value='';sp.style.display='none';}
+  var ot=document.getElementById('onetimeSqIn');if(ot) ot.value='';
+  var otf=document.getElementById('onetimeSqFld');if(otf) otf.style.display='none';
   document.getElementById('siteOv').value='';
   // Reset spray toggle buttons
   var bf=document.getElementById('btnFullLawn');
@@ -944,7 +1023,24 @@ function getTab(){var n=new Date();return n.toLocaleDateString('en-US',{month:'s
 function renderLog(){var list=document.getElementById('logList'),empty=document.getElementById('logEmpty'),bar=document.getElementById('ebar'),bdg=document.getElementById('logBdg'),cnt=document.getElementById('eCnt');bdg.textContent=queue.length;bdg.className='bdg'+(queue.length?' show':'');cnt.textContent=queue.length+' entr'+(queue.length===1?'y':'ies')+' today';if(!queue.length){empty.style.display='block';list.innerHTML='';bar.className='ebar';return;}empty.style.display='none';bar.className='ebar show';list.innerHTML=queue.map(function(e,i){return'<div class="qi"><div class="qi-body'+(e.synced?'':' pend')+'">'+'<div class="qi-top"><div class="qi-name">'+e.customer+'</div><div style="display:flex;align-items:center;gap:5px"><span class="qi-time">'+e.time+'</span>'+(e.synced?'':'<button class="btn-del" onclick="removeEntry('+i+')">×</button>')+'</div></div>'+'<div class="qi-svc">'+e.service+'</div>'+'<div class="qi-pills"><span class="qp g">'+e.date+'</span><span class="qp'+(e.weather?'':' y')+'">'+(e.weather||'No weather')+'</span><span class="qp">'+(e.temp||'—')+'</span><span class="qp">'+e.appSite+'</span>'+(e.synced?'<span class="qp g">☁ synced</span>':'<span class="qp y">⏳ pending</span>')+'</div>'+(e.totalUsed?'<div style="font-size:11px;font-family:var(--mono);color:var(--grn);margin-bottom:8px">Total used: '+e.totalUsed+'</div>':'')+'<div class="qi-sq"><label>SQ FT:</label><input class="sq-inp'+(e.sqFt?' sv':'')+'" type="number" value="'+(e.sqFt||'')+'" placeholder="enter sq ft" onchange="updateSq('+i+',this)"><span class="flash" id="sf-'+i+'">✓</span></div>'+'</div></div>';}).join('');}
 function updateSq(i,el){var val=el.value.trim();queue[i].sqFt=val;var ci=custDB.findIndex(function(c){return c.name===queue[i].customer;});if(ci>=0&&val){custDB[ci].sqFt=val;saveC();renderCusts();}saveQ();el.className='sq-inp'+(val?' sv':'');var f=document.getElementById('sf-'+i);if(f){f.className='flash show';setTimeout(function(){f.className='flash';},2000);}}
 function removeEntry(i){queue.splice(i,1);saveQ();renderLog();}
-function archiveDay(){if(!queue.length){toast('No entries to archive');return;}var today=document.getElementById('aDate').textContent;var ex=archive.findIndex(function(a){return a.date===today;});if(ex>=0)archive[ex].entries=archive[ex].entries.concat(queue);else archive.push({date:today,entries:queue.slice()});var cutoff=new Date();cutoff.setFullYear(cutoff.getFullYear()-3);archive=archive.filter(function(a){var p=a.date.split('/');return new Date(p[2],p[0]-1,p[1])>=cutoff;});saveA();queue=[];saveQ();renderLog();renderArchive();toast('✓ '+today+' archived permanently');}
+function archiveDay(){
+  if(!queue.length){toast('No entries to archive');return;}
+  var today=document.getElementById('aDate').textContent;
+  var ex=archive.findIndex(function(a){return a.date===today;});
+  if(ex>=0) archive[ex].entries=archive[ex].entries.concat(queue);
+  else archive.push({date:today,entries:queue.slice()});
+  var cutoff=new Date();cutoff.setFullYear(cutoff.getFullYear()-3);
+  archive=archive.filter(function(a){var p=a.date.split('/');return new Date(p[2],p[0]-1,p[1])>=cutoff;});
+  saveA();
+  // Sync any unsynced entries to Sheets
+  queue.forEach(function(entry){
+    if(!entry.synced){
+      api({action:'appendLog',tab:getTab(),row:eRow(entry),headers:HEADERS},null,null);
+    }
+  });
+  queue=[];saveQ();renderLog();renderArchive();renderTotals();
+  toast('✓ '+today+' archived permanently');
+}
 function renderArchive(){var list=document.getElementById('archList'),empty=document.getElementById('archEmpty');if(!archive.length){empty.style.display='block';list.innerHTML='';return;}empty.style.display='none';var months={};archive.forEach(function(day){var p=day.date.split('/');var k=p[2]+'-'+(p[0].length<2?'0':'')+p[0];if(!months[k])months[k]={label:moL(p[0],p[2]),days:[]};months[k].days.push(day);});list.innerHTML=Object.keys(months).sort().reverse().map(function(mk){var mo=months[mk];var total=mo.days.reduce(function(s,d){return s+d.entries.length;},0);return'<div class="arch-month"><div class="arch-hdr" onclick="tA(\''+mk+'\')">'+'<div><h3>'+mo.label+'</h3><p>'+mo.days.length+' day'+(mo.days.length!==1?'s':'')+' · '+total+' apps</p></div>'+'<div style="display:flex;align-items:center;gap:7px"><span class="arch-bdg">'+total+'</span><span>▾</span></div></div>'+'<div class="arch-body" id="ab-'+mk+'">'+mo.days.sort(function(a,b){return a.date.localeCompare(b.date);}).map(function(day){return'<div style="margin-bottom:10px"><div style="font-size:11px;font-family:var(--mono);color:var(--dim);margin-bottom:5px">'+day.date+' — '+day.entries.length+' entries</div>'+day.entries.map(function(e){return'<div class="arch-entry"><b>'+e.customer+'</b><span>'+e.service+(e.sqFt?' · '+Number(e.sqFt).toLocaleString()+' sqft':'')+(e.totalUsed?' · '+e.totalUsed:'')+'</span></div>';}).join('')+'</div>';}).join('')+'<div class="arch-foot"><button class="btn-sm" onclick="exMo(\''+mk+'\')">Copy '+mo.label+' → Excel</button></div></div></div>';}).join('');}
 function tA(mk){document.getElementById('ab-'+mk).classList.toggle('open');}
 function moL(m,y){var n=['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];return n[parseInt(m)]+' '+y;}

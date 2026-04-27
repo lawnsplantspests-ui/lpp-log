@@ -519,7 +519,7 @@ function restoreArchiveFromSheets(){
           function(r){
             if(r.entries&&r.entries.length){
               r.entries.forEach(function(entry){
-                if(!entry.date||!entry.date.match(/\d+\/\d+\/\d+/)) return;
+                if(!entry.date||!entry.customer) return; // skip empty rows
                 var dayKey=entry.date;
                 var ex=archive.findIndex(function(a){return a.date===dayKey;});
                 if(ex>=0){

@@ -500,76 +500,80 @@ function fillProdFromLib(sel){fillEditLib(sel);}
 
 
 
+// Cache of which tabs have been loaded from Sheets
+var loadedTabs = {};
+var availableTabs = []; // list of tab names from Sheets
+
 function restoreArchiveFromSheets(){
-  setSUI('go','restoring archive…');
+  setSUI('go','loading…');
+  // Just get the list of available tabs — don't fetch all data yet
   api({action:'getLogTabs'},
     function(d){
-      var tabs=d.tabs||[];
-      if(!tabs.length){
-        setSUI('ok','synced ✓');
-        renderArchive();renderTotals();
-        return;
-      }
-      var pending=tabs.length;
-      var totalRestored=0;
-
-      tabs.forEach(function(tab){
-        api({action:'getLog',tab:tab},
-          function(r){
-            if(r.entries&&r.entries.length){
-              r.entries.forEach(function(entry){
-                // Skip invalid entries
-                if(!entry.date||!entry.customer) return;
-                // Validate date format MM/DD/YYYY
-                var p=entry.date.split('/');
-                if(p.length!==3||!p[0]||!p[1]||!p[2]) return;
-                var dayKey=entry.date;
-                var ex=archive.findIndex(function(a){return a.date===dayKey;});
-                if(ex>=0){
-                  // Add to existing day — avoid duplicates by id
-                  var ids=new Set(archive[ex].entries.map(function(e){return String(e.id);}));
-                  if(!ids.has(String(entry.id))){
-                    archive[ex].entries.push(entry);
-                    totalRestored++;
-                  }
-                } else {
-                  archive.push({date:dayKey,entries:[entry]});
-                  totalRestored++;
-                }
-              });
-            }
-            pending--;
-            if(pending===0){
-              // Sort archive by date newest first
-              archive.sort(function(a,b){
-                var pa=a.date.split('/'),pb=b.date.split('/');
-                var da=new Date(pa[2],pa[0]-1,pa[1]);
-                var db=new Date(pb[2],pb[0]-1,pb[1]);
-                return db-da;
-              });
-              saveA();
-              renderArchive();
-              renderTotals();
-              setSUI('ok','synced ✓');
-              if(totalRestored>0) toast('✓ Synced '+totalRestored+' entries from '+tabs.length+' month'+(tabs.length!==1?'s':''));
-            }
-          },
-          function(){
-            pending--;
-            if(pending===0){
-              saveA();renderArchive();renderTotals();
-              setSUI('ok','synced ✓');
-            }
-          }
-        );
-      });
+      availableTabs = d.tabs || [];
+      setSUI('ok','synced ✓');
+      renderArchive();
+      renderTotals();
     },
     function(){
       setSUI('err','offline');
-      renderArchive();renderTotals();
-      toast('⚠ Offline — showing cached archive');
+      renderArchive();
+      renderTotals();
     }
   );
+}
+
+// Fetch a specific month tab from Sheets and merge into archive
+function loadTabFromSheets(tab, callback){
+  if(loadedTabs[tab]){
+    if(callback) callback();
+    return; // already loaded
+  }
+  setSUI('go','loading '+tab+'…');
+  api({action:'getLog', tab:tab},
+    function(r){
+      loadedTabs[tab] = true;
+      if(r.entries && r.entries.length){
+        r.entries.forEach(function(entry){
+          if(!entry.date || !entry.customer) return;
+          var p = entry.date.split('/');
+          if(p.length !== 3 || !p[0] || !p[1] || !p[2]) return;
+          var ex = archive.findIndex(function(a){return a.date === entry.date;});
+          if(ex >= 0){
+            var ids = new Set(archive[ex].entries.map(function(e){return String(e.id);}));
+            if(!ids.has(String(entry.id))) archive[ex].entries.push(entry);
+          } else {
+            archive.push({date: entry.date, entries: [entry]});
+          }
+        });
+        saveA();
+      }
+      setSUI('ok','synced ✓');
+      if(callback) callback();
+    },
+    function(){
+      setSUI('err','offline');
+      if(callback) callback();
+    }
+  );
+}
+
+// Get tab name from a month key (YYYY-MM format)
+function tabFromMonthKey(mk){
+  var parts = mk.split('-');
+  var yr = parts[0];
+  var mo = parseInt(parts[1]);
+  var names = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return names[mo] + '_' + yr;
+}
+
+// Get month key from tab name (e.g. Apr_2026 -> 2026-04)
+function monthKeyFromTab(tab){
+  var parts = tab.split('_');
+  if(parts.length !== 2) return null;
+  var names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  var mo = names.indexOf(parts[0]) + 1;
+  if(mo < 1) return null;
+  return parts[1] + '-' + (mo < 10 ? '0'+mo : ''+mo);
 }
 
 
@@ -1054,20 +1058,153 @@ function archiveDay(){
   queue=[];saveQ();renderLog();renderArchive();renderTotals();
   toast('✓ '+today+' archived permanently');
 }
-function renderArchive(){var list=document.getElementById('archList'),empty=document.getElementById('archEmpty');if(!archive.length){empty.style.display='block';list.innerHTML='';return;}empty.style.display='none';var months={};archive.forEach(function(day){
-    if(!day.date) return; // skip invalid
-    var p=day.date.split('/');
-    if(p.length!==3||!p[0]||!p[2]) return; // skip malformed dates
-    var mo=p[0].length<2?'0'+p[0]:p[0];
-    var k=p[2]+'-'+mo;
-    if(!months[k]) months[k]={label:moL(p[0],p[2]),days:[]};
-    months[k].days.push(day);
-  });list.innerHTML=Object.keys(months).sort().reverse().map(function(mk){var mo=months[mk];var total=mo.days.reduce(function(s,d){return s+d.entries.length;},0);return'<div class="arch-month"><div class="arch-hdr" onclick="tA(\''+mk+'\')">'+'<div><h3>'+mo.label+'</h3><p>'+mo.days.length+' day'+(mo.days.length!==1?'s':'')+' · '+total+' apps</p></div>'+'<div style="display:flex;align-items:center;gap:7px"><span class="arch-bdg">'+total+'</span><span>▾</span></div></div>'+'<div class="arch-body" id="ab-'+mk+'">'+mo.days.sort(function(a,b){return a.date.localeCompare(b.date);}).map(function(day){return'<div style="margin-bottom:10px"><div style="font-size:11px;font-family:var(--mono);color:var(--dim);margin-bottom:5px">'+day.date+' — '+day.entries.length+' entries</div>'+day.entries.map(function(e){return'<div class="arch-entry"><b>'+e.customer+'</b><span>'+e.service+(e.sqFt?' · '+Number(e.sqFt).toLocaleString()+' sqft':'')+(e.totalUsed?' · '+e.totalUsed:'')+'</span></div>';}).join('')+'</div>';}).join('')+'<div class="arch-foot"><button class="btn-sm" onclick="exMo(\''+mk+'\')">Copy '+mo.label+' → Excel</button></div></div></div>';}).join('');}
-function tA(mk){document.getElementById('ab-'+mk).classList.toggle('open');}
+function renderArchive(){
+  var list = document.getElementById('archList');
+  var empty = document.getElementById('archEmpty');
+  if(!list) return;
+
+  // Build month list from availableTabs + any local archive data
+  var months = {};
+
+  // Add months from Sheets tabs
+  availableTabs.forEach(function(tab){
+    var mk = monthKeyFromTab(tab);
+    if(mk) months[mk] = {tab: tab, label: tabToLabel(tab), days: [], fromSheets: true};
+  });
+
+  // Add months from local archive
+  archive.forEach(function(day){
+    if(!day.date) return;
+    var p = day.date.split('/');
+    if(p.length !== 3 || !p[0] || !p[2]) return;
+    var mo = p[0].length < 2 ? '0'+p[0] : p[0];
+    var mk = p[2]+'-'+mo;
+    if(!months[mk]) months[mk] = {tab: tabFromMonthKey(mk), label: moL(p[0],p[2]), days: [], fromSheets: false};
+    months[mk].days.push(day);
+  });
+
+  var keys = Object.keys(months).sort().reverse();
+
+  if(!keys.length){
+    empty.style.display = 'block';
+    list.innerHTML = '';
+    return;
+  }
+  empty.style.display = 'none';
+
+  list.innerHTML = keys.map(function(mk){
+    var mo = months[mk];
+    var total = mo.days.reduce(function(s,d){return s+d.entries.length;},0);
+    var loaded = loadedTabs[mo.tab] || mo.days.length > 0;
+    var countTxt = loaded
+      ? (mo.days.length+' day'+(mo.days.length!==1?'s':'')+' · '+total+' apps')
+      : 'tap to load from Google Sheets';
+
+    var dayRows = mo.days.length ? mo.days
+      .sort(function(a,b){return a.date.localeCompare(b.date);})
+      .map(function(day){
+        return '<div style="margin-bottom:10px">'
+          +'<div style="font-size:11px;font-family:var(--mono);color:var(--dim);margin-bottom:5px">'+day.date+' — '+day.entries.length+' entries</div>'
+          +day.entries.map(function(e){
+            return '<div class="arch-entry"><b>'+e.customer+'</b>'
+              +'<span>'+e.service
+              +(e.sqFt?' · '+Number(e.sqFt).toLocaleString()+' sqft':'')
+              +(e.totalUsed?' · '+e.totalUsed:'')
+              +'</span></div>';
+          }).join('')
+          +'</div>';
+      }).join('')
+      : '<div style="text-align:center;padding:20px;color:var(--mut);font-size:12px;font-family:var(--mono)">Loading…</div>';
+
+    return '<div class="arch-month" data-mk="'+mk+'" data-tab="'+(mo.tab||'')+'">'
+      +'<div class="arch-hdr" onclick="tAFetchEl(this)">'
+      +'<div><h3>'+mo.label+'</h3><p>'+countTxt+'</p></div>'
+      +'<div style="display:flex;align-items:center;gap:7px">'
+      +(total?'<span class="arch-bdg">'+total+'</span>':'')
+      +'<span>▾</span></div></div>'
+      +'<div class="arch-body" id="ab-'+mk+'">'
+      +dayRows
+      +'<div class="arch-foot"><button class="btn-sm" onclick="exMoEl(this)">Copy '+mo.label+' → Excel</button></div>'
+      +'</div></div>';
+  }).join('');
+}
+
+function tabToLabel(tab){
+  var parts = tab.split('_');
+  if(parts.length !== 2) return tab;
+  return parts[0]+' '+parts[1];
+}
+
+function tAFetch(mk, tab){
+  var body = document.getElementById('ab-'+mk);
+  if(!body) return;
+  var isOpen = body.classList.contains('open');
+  if(isOpen){ body.classList.remove('open'); return; }
+  // Load from Sheets if not already loaded
+  if(!loadedTabs[tab] && tab){
+    loadTabFromSheets(tab, function(){
+      renderArchive();
+      // Re-open the month after loading
+      setTimeout(function(){
+        var b = document.getElementById('ab-'+mk);
+        if(b) b.classList.add('open');
+      }, 100);
+    });
+  } else {
+    body.classList.add('open');
+  }
+}
+
+
+function tA(mk){var b=document.getElementById('ab-'+mk);if(b)b.classList.toggle('open');}
+function tAFetchEl(el){var w=el.closest('[data-mk]');if(!w)return;tAFetch(w.dataset.mk,w.dataset.tab);}
 function moL(m,y){var n=['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];return n[parseInt(m)]+' '+y;}
+function exMoEl(el){var w=el.closest("[data-mk]");if(w)exMo(w.dataset.mk);}
 function exMo(mk){var p=mk.split('-');var all=[];archive.filter(function(a){var q=a.date.split('/');return q[2]===p[0]&&(q[0].length<2?'0':'')+q[0]===p[1];}).forEach(function(d){all=all.concat(d.entries);});if(!all.length){toast('No entries');return;}cpTsv(all);toast('✓ '+all.length+' rows copied');}
 // delMo removed — archive is permanent
 function renderTotals(){
+  var period = document.getElementById('totPer').value;
+  var selMo = document.getElementById('totMonth');
+  var n = new Date();
+
+  // Figure out which tabs we need for this period
+  var tabsNeeded = [];
+  if(period === 'all'){
+    tabsNeeded = availableTabs.slice();
+  } else if(period === 'today' || period === 'week'){
+    // Current month + possibly previous month (for week spanning month boundary)
+    var curTab = n.toLocaleDateString('en-US',{month:'short',year:'numeric'}).replace(' ','_');
+    tabsNeeded = [curTab];
+    if(period === 'week'){
+      var prev = new Date(n.getFullYear(), n.getMonth()-1, 1);
+      var prevTab = prev.toLocaleDateString('en-US',{month:'short',year:'numeric'}).replace(' ','_');
+      if(availableTabs.indexOf(prevTab) >= 0) tabsNeeded.push(prevTab);
+    }
+  } else if(period === 'month'){
+    if(selMo && selMo.value){
+      tabsNeeded = [tabFromMonthKey(selMo.value)];
+    } else {
+      var curTab2 = n.toLocaleDateString('en-US',{month:'short',year:'numeric'}).replace(' ','_');
+      tabsNeeded = [curTab2];
+    }
+  }
+
+  // Load any unloaded tabs, then render
+  var toLoad = tabsNeeded.filter(function(t){ return t && !loadedTabs[t] && availableTabs.indexOf(t)>=0; });
+  if(toLoad.length > 0){
+    var pending = toLoad.length;
+    toLoad.forEach(function(tab){
+      loadTabFromSheets(tab, function(){
+        pending--;
+        if(pending === 0) doRenderTotals();
+      });
+    });
+    return;
+  }
+  doRenderTotals();
+}
+
+function doRenderTotals(){
   populateMonthDropdown();
   var period=document.getElementById('totPer').value;
   var el=document.getElementById('totContent');

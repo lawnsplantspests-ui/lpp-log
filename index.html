@@ -526,32 +526,48 @@ function restoreArchiveFromSheets(){
 function loadTabFromSheets(tab, callback){
   if(loadedTabs[tab]){
     if(callback) callback();
-    return; // already loaded
+    return;
   }
   setSUI('go','loading '+tab+'…');
   api({action:'getLog', tab:tab},
     function(r){
       loadedTabs[tab] = true;
+      var count = 0;
       if(r.entries && r.entries.length){
         r.entries.forEach(function(entry){
-          if(!entry.date || !entry.customer) return;
-          var p = entry.date.split('/');
-          if(p.length !== 3 || !p[0] || !p[1] || !p[2]) return;
+          // Accept any entry with a customer name - be lenient on date format
+          if(!entry.customer) return;
+          // Fix date if needed
+          if(!entry.date || entry.date.indexOf('/') < 0){
+            // Try to reconstruct from tab name e.g. Mar_2026
+            var parts = tab.split('_');
+            if(parts.length === 2){
+              var moNames=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+              var mo = moNames.indexOf(parts[0]) + 1;
+              entry.date = (mo>0?mo:'01')+'/01/'+parts[1];
+            }
+          }
           var ex = archive.findIndex(function(a){return a.date === entry.date;});
           if(ex >= 0){
             var ids = new Set(archive[ex].entries.map(function(e){return String(e.id);}));
-            if(!ids.has(String(entry.id))) archive[ex].entries.push(entry);
+            if(!ids.has(String(entry.id))){
+              archive[ex].entries.push(entry);
+              count++;
+            }
           } else {
             archive.push({date: entry.date, entries: [entry]});
+            count++;
           }
         });
-        saveA();
+        if(count > 0) saveA();
       }
       setSUI('ok','synced ✓');
+      toast('✓ Loaded '+count+' entries from '+tab);
       if(callback) callback();
     },
-    function(){
-      setSUI('err','offline');
+    function(err){
+      setSUI('err','failed');
+      toast('⚠ Could not load '+tab+': '+(err||'check connection'));
       if(callback) callback();
     }
   );
@@ -1145,15 +1161,18 @@ function tAFetch(mk, tab){
   if(!body) return;
   var isOpen = body.classList.contains('open');
   if(isOpen){ body.classList.remove('open'); return; }
-  // Load from Sheets if not already loaded
   if(!loadedTabs[tab] && tab){
+    // Show loading state in the body while fetching
+    body.classList.add('open');
+    body.innerHTML = '<div style="text-align:center;padding:20px;color:var(--mut);font-size:12px;font-family:var(--mono)">Loading from Google Sheets…</div>';
     loadTabFromSheets(tab, function(){
+      // Rebuild just this month's content
       renderArchive();
-      // Re-open the month after loading
+      // Re-open after rebuild
       setTimeout(function(){
         var b = document.getElementById('ab-'+mk);
         if(b) b.classList.add('open');
-      }, 100);
+      }, 50);
     });
   } else {
     body.classList.add('open');

@@ -382,7 +382,20 @@ var DEFAULT_SV={'Lawn Care - Rd 1 (Fertilizer Only)':{appSite:'Full Lawn',notes:
 // ── STATE ────────────────────────────────────────────────────────
 var queue      = JSON.parse(localStorage.getItem('pda_q') || '[]');
 var productLib = []; // loaded from Google Sheets Products tab
-var archive = JSON.parse(localStorage.getItem('pda_a') || '[]');
+var archive = (function(){
+  var raw = JSON.parse(localStorage.getItem('pda_a') || '[]');
+  // Detect old format: archive entries with only 1 entry each (individual rows not grouped)
+  // If more than 80% of days have exactly 1 entry and there are many days, it's old format
+  if(raw.length > 10){
+    var singles = raw.filter(function(d){ return d.entries && d.entries.length === 1; }).length;
+    if(singles / raw.length > 0.8){
+      // Old format detected — clear and reload from Sheets
+      localStorage.removeItem('pda_a');
+      return [];
+    }
+  }
+  return raw;
+})();
 var custDB  = JSON.parse(localStorage.getItem('pda_c_cache') || '[]');
 var SV      = JSON.parse(localStorage.getItem('pda_sv_cache') || 'null');
 var editSvcKey = null;
@@ -533,31 +546,42 @@ function loadTabFromSheets(tab, callback){
       loadedTabs[tab] = true;
       var count = 0;
       if(r.entries && r.entries.length){
+        // First group all entries by date
+        var byDate = {};
         r.entries.forEach(function(entry){
-          // Accept any entry with a customer name - be lenient on date format
           if(!entry.customer) return;
-          // Fix date if needed
+          // Ensure valid date
           if(!entry.date || entry.date.indexOf('/') < 0){
-            // Try to reconstruct from tab name e.g. Mar_2026
             var parts = tab.split('_');
             if(parts.length === 2){
               var moNames=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
               var mo = moNames.indexOf(parts[0]) + 1;
-              entry.date = (mo>0?mo:'01')+'/01/'+parts[1];
+              entry.date = (mo>0?String(mo):'01')+'/01/'+parts[1];
             }
           }
-          var ex = archive.findIndex(function(a){return a.date === entry.date;});
+          if(!byDate[entry.date]) byDate[entry.date] = [];
+          byDate[entry.date].push(entry);
+        });
+
+        // Merge grouped dates into archive
+        Object.keys(byDate).forEach(function(date){
+          var newEntries = byDate[date];
+          var ex = archive.findIndex(function(a){ return a.date === date; });
           if(ex >= 0){
-            var ids = new Set(archive[ex].entries.map(function(e){return String(e.id);}));
-            if(!ids.has(String(entry.id))){
-              archive[ex].entries.push(entry);
-              count++;
-            }
+            // Add only entries not already present (check by id)
+            var ids = new Set(archive[ex].entries.map(function(e){ return String(e.id); }));
+            newEntries.forEach(function(entry){
+              if(!ids.has(String(entry.id))){
+                archive[ex].entries.push(entry);
+                count++;
+              }
+            });
           } else {
-            archive.push({date: entry.date, entries: [entry]});
-            count++;
+            archive.push({ date: date, entries: newEntries });
+            count += newEntries.length;
           }
         });
+
         if(count > 0) saveA();
       }
       setSUI('ok','synced ✓');

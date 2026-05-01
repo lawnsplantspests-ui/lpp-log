@@ -531,11 +531,11 @@ function restoreArchiveFromSheets(){
   archive.forEach(function(day){
     if(!merged[day.date]) merged[day.date] = {date:day.date, entries:[]};
     day.entries.forEach(function(e){
-      var ids = new Set(merged[day.date].entries.map(function(x){return String(x.id);}));
-      if(!ids.has(String(e.id))) merged[day.date].entries.push(e);
+      var existIds = merged[day.date].entries.map(function(x){return String(x.id);});
+      if(existIds.indexOf(String(e.id)) < 0) merged[day.date].entries.push(e);
     });
   });
-  archive = Object.values(merged);
+  archive = Object.keys(merged).map(function(k){ return merged[k]; });
   saveA();
   setSUI('go','loading…');
   // Just get the list of available tabs — don't fetch all data yet
@@ -587,10 +587,11 @@ function loadTabFromSheets(tab, callback){
           var ex = archive.findIndex(function(a){ return a.date === date; });
           if(ex >= 0){
             // Add only entries not already present (check by id)
-            var ids = new Set(archive[ex].entries.map(function(e){ return String(e.id); }));
+            var existingIds = archive[ex].entries.map(function(e){ return String(e.id); });
             newEntries.forEach(function(entry){
-              if(!ids.has(String(entry.id))){
+              if(existingIds.indexOf(String(entry.id)) < 0){
                 archive[ex].entries.push(entry);
+                existingIds.push(String(entry.id));
                 count++;
               }
             });
@@ -1381,7 +1382,8 @@ function doRenderTotals(){
     }
   });
 
-  var uniq=new Set(all.map(function(e){return e.customer;})).size;
+  var custArr=all.map(function(e){return e.customer;});
+  var uniq=custArr.filter(function(c,i){return custArr.indexOf(c)===i;}).length;
   var mos=Object.keys(byMo).length||1;
   var html='<div class="stat-grid">'
     +'<div class="stat-box"><div class="sb-val">'+all.length+'</div><div class="sb-lbl">Total Apps</div></div>'
@@ -1456,25 +1458,45 @@ function populateTotalsDropdown(){
 
 function normalizeDate(d){
   if(!d) return '';
-  if(typeof d === 'string'){
-    // Already MM/DD/YYYY
-    if(d.match(/^\d{1,2}\/\d{1,2}\/\d{4}$/)) return d;
-    // ISO format: 2026-03-09T...
-    if(d.indexOf('T') >= 0 || d.match(/^\d{4}-\d{2}-\d{2}/)){
-      var iso = d.split('T')[0].split('-');
-      if(iso.length === 3) return iso[1]+'/'+iso[2]+'/'+iso[0];
-    }
-    // Date object toString: "Wed Apr 01 2026 00:00:00..."
-    var m = d.match(/(\w+)\s+(\w+)\s+(\d+)\s+(\d{4})/);
-    if(m){
-      var months={Jan:'01',Feb:'02',Mar:'03',Apr:'04',May:'05',Jun:'06',
-                  Jul:'07',Aug:'08',Sep:'09',Oct:'10',Nov:'11',Dec:'12'};
-      var mo=months[m[2]]||'01';
-      var dy=m[3].padStart(2,'0');
-      return mo+'/'+dy+'/'+m[4];
+  var s = String(d).trim();
+  if(!s) return '';
+
+  // Already MM/DD/YYYY — check for slash in position 2 or 3
+  if(s.indexOf('/') === 1 || s.indexOf('/') === 2){
+    var parts = s.split('/');
+    if(parts.length === 3 && parts[2].length === 4){
+      var mo = parts[0].length === 1 ? '0'+parts[0] : parts[0];
+      var dy = parts[1].length === 1 ? '0'+parts[1] : parts[1];
+      return mo+'/'+dy+'/'+parts[2];
     }
   }
-  return String(d);
+
+  // ISO format: 2026-03-09T04:00:00.000Z or 2026-03-09
+  if(s.indexOf('-') === 4){
+    var base = s.split('T')[0];
+    var iso = base.split('-');
+    if(iso.length === 3 && iso[0].length === 4){
+      return iso[1]+'/'+iso[2]+'/'+iso[0];
+    }
+  }
+
+  // Date.toString() format: "Wed Apr 01 2026 00:00:00 GMT..."
+  // Split by spaces and parse
+  var words = s.split(' ');
+  if(words.length >= 4){
+    var moNames = {Jan:'01',Feb:'02',Mar:'03',Apr:'04',May:'05',Jun:'06',
+                   Jul:'07',Aug:'08',Sep:'09',Oct:'10',Nov:'11',Dec:'12'};
+    // Find the month name, day number, and 4-digit year
+    var mo='', dy='', yr='';
+    for(var i=0;i<words.length;i++){
+      if(moNames[words[i]]) mo = moNames[words[i]];
+      if(words[i].length === 4 && !isNaN(parseInt(words[i])) && parseInt(words[i]) > 2000) yr = words[i];
+      if(words[i].length <= 2 && !isNaN(parseInt(words[i])) && parseInt(words[i]) > 0 && parseInt(words[i]) <= 31 && mo) dy = words[i].length === 1 ? '0'+words[i] : words[i];
+    }
+    if(mo && dy && yr) return mo+'/'+dy+'/'+yr;
+  }
+
+  return '';
 }
 
 function parseEntryDate(dateStr){
@@ -1915,12 +1937,12 @@ function getProdLibrary(){
     lib.push(p);
   });
   // Also include products from services (no duplicates by name+method)
-  var seen=new Set(lib.map(function(p){return p.product+'|'+(p.method||'');}));
-  Object.values(SV).forEach(function(svc){
+  var seenArr=lib.map(function(p){return p.product+'|'+(p.method||'');});
+  Object.keys(SV).map(function(k){return SV[k];}).forEach(function(svc){
     if(!svc.products)return;
     svc.products.forEach(function(p){
       var key=p.product+'|'+(svc.method||p.method||'');
-      if(p.product&&!seen.has(key)){seen.add(key);lib.push(p);}
+      if(p.product&&seenArr.indexOf(key)<0){seenArr.push(key);lib.push(p);}
     });
   });
   return lib.sort(function(a,b){return a.product.localeCompare(b.product);});

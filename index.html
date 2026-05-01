@@ -267,6 +267,7 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans)}
   <div class="period-bar">
     <label style="font-size:10px;font-family:var(--mono);color:var(--dim)">PERIOD:</label>
     <select id="totPer" onchange="renderTotals()" style="background:transparent;border:none;outline:none;color:var(--txt);font-size:13px;font-family:var(--mono);appearance:none;flex:1">
+      <option value="today">Today</option>
       <option value="week">This Week</option>
       <option value="lastweek">Last Week</option>
       <option value="month" selected>This Month</option>
@@ -1121,13 +1122,25 @@ function renderArchive(){
 
     var dayRows = mo.days.length ? mo.days
       .sort(function(a,b){return a.date.localeCompare(b.date);})
-      .map(function(day){
-        return '<div style="margin-bottom:10px">'
-          +'<div style="font-size:11px;font-family:var(--mono);color:var(--dim);margin-bottom:5px">'+day.date+' — '+day.entries.length+' entries</div>'
+      .map(function(day, di){
+        // Format date nicely: "Monday, April 7, 2026"
+        var p = day.date.split('/');
+        var dateObj = p.length===3 ? new Date(p[2], p[0]-1, p[1]) : null;
+        var dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+        var moNames  = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+        var dateFmt  = dateObj
+          ? dayNames[dateObj.getDay()]+', '+moNames[dateObj.getMonth()]+' '+dateObj.getDate()+', '+dateObj.getFullYear()
+          : day.date;
+        return '<div style="margin-bottom:0;border-top:'+(di>0?'1px solid var(--bdr)':'none')+';padding-top:'+(di>0?'12px':'0')+';margin-top:'+(di>0?'12px':'0')+'">'
+          +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">'
+          +'<div style="font-size:12px;font-weight:600;font-family:var(--mono);color:var(--grn)">'+dateFmt+'</div>'
+          +'<div style="font-size:10px;font-family:var(--mono);color:var(--mut)">'+day.entries.length+' service'+(day.entries.length!==1?'s':'')+'</div>'
+          +'</div>'
           +day.entries.map(function(e){
-            return '<div class="arch-entry"><b>'+e.customer+'</b>'
+            return '<div class="arch-entry">'
+              +'<b>'+e.customer+'</b>'
               +'<span>'+e.service
-              +(e.sqFt?' · '+Number(e.sqFt).toLocaleString()+' sqft':'')
+              +(e.sqFt&&e.sqFt!=='0'?' · '+Number(e.sqFt).toLocaleString()+' sqft':'')
               +(e.totalUsed?' · '+e.totalUsed:'')
               +'</span></div>';
           }).join('')
@@ -1194,7 +1207,9 @@ function renderTotals(){
 
   // Figure out which Sheets tabs to load for this period
   var tabsNeeded = [];
-  if(period === 'week' || period === 'lastweek'){
+  if(period === 'today'){
+    tabsNeeded = [getTabName(n)];
+  } else if(period === 'week' || period === 'lastweek'){
     var baseDate = period === 'week' ? n : new Date(n.getTime() - 7*24*60*60*1000);
     var t1 = getTabName(baseDate);
     tabsNeeded.push(t1);
@@ -1237,6 +1252,7 @@ function populateTotalsDropdown(){
 
   // Build options: fixed periods first, then month tabs from Sheets
   var opts = [
+    '<option value="today">Today</option>',
     '<option value="week">This Week</option>',
     '<option value="lastweek">Last Week</option>',
     '<option value="month">This Month</option>',
@@ -1396,6 +1412,11 @@ function getPE(period){
 
   var n = new Date();
   var today = new Date(n.getFullYear(), n.getMonth(), n.getDate());
+
+  if(period === 'today'){
+    var todStr = n.toLocaleDateString('en-US',{month:'2-digit',day:'2-digit',year:'numeric'});
+    return all.filter(function(e){ return e.date === todStr; });
+  }
 
   if(period === 'week'){
     // Mon–Sun of current week

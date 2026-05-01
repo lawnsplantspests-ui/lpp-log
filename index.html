@@ -260,6 +260,10 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans)}
 <!-- ARCHIVE -->
 <div class="pg" id="pg-arch"><div class="body">
   <div class="empty" id="archEmpty"><div class="empty-ico">🗂️</div><p>No archived days yet.<br>Tap Archive in Today's Log.</p><br><small>3-year retention</small></div>
+  <div style="display:flex;gap:8px;margin-bottom:8px">
+    <button class="btn-sm" onclick="debugArchive()" style="color:var(--grn);border-color:var(--gdim)">Debug</button>
+    <button class="btn-sm" onclick="clearAndReload()" style="color:var(--red);border-color:var(--red)">Clear Cache & Reload</button>
+  </div>
   <div id="archList"></div>
 </div></div>
 <!-- TOTALS -->
@@ -1216,6 +1220,24 @@ function tAFetch(mk, tab){
 
 
 function tA(mk){var b=document.getElementById('ab-'+mk);if(b)b.classList.toggle('open');}
+function debugArchive(){
+  var msg = 'archive length: '+archive.length+'\n';
+  msg += 'loadedTabs: '+JSON.stringify(Object.keys(loadedTabs))+'\n';
+  msg += 'availableTabs: '+JSON.stringify(availableTabs)+'\n\n';
+  archive.slice(0,10).forEach(function(d){
+    msg += 'date: '+d.date+' | entries: '+d.entries.length+'\n';
+  });
+  alert(msg);
+}
+function clearAndReload(){
+  if(!confirm('Clear all cached archive data and reload from Sheets?')) return;
+  localStorage.removeItem('pda_a');
+  archive = [];
+  loadedTabs = {};
+  availableTabs = [];
+  toast('Cache cleared — reloading…');
+  restoreArchiveFromSheets();
+}
 function tAFetchEl(el){var w=el.closest('[data-mk]');if(!w)return;tAFetch(w.dataset.mk,w.dataset.tab);}
 function moL(m,y){var n=['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];return n[parseInt(m)]+' '+y;}
 function exMoEl(el){var w=el.closest("[data-mk]");if(w)exMo(w.dataset.mk);}

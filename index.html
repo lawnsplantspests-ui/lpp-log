@@ -259,11 +259,13 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans)}
 </div></div></div>
 <!-- ARCHIVE -->
 <div class="pg" id="pg-arch"><div class="body">
-  <div class="empty" id="archEmpty"><div class="empty-ico">🗂️</div><p>No archived days yet.<br>Tap Archive in Today's Log.</p><br><small>3-year retention</small></div>
-  <div style="display:flex;gap:8px;margin-bottom:8px">
-    <button class="btn-sm" onclick="debugArchive()" style="color:var(--grn);border-color:var(--gdim)">Debug</button>
-    <button class="btn-sm" onclick="clearAndReload()" style="color:var(--red);border-color:var(--red)">Clear Cache & Reload</button>
+  <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center">
+    <select id="archCustFilter" onchange="renderArchive()" style="flex:1;background:var(--sur);border:1px solid var(--bdr);border-radius:8px;padding:8px 10px;color:var(--txt);font-size:13px;font-family:var(--sans);appearance:none;-webkit-appearance:none">
+      <option value="">All Customers</option>
+    </select>
+    <button class="btn-sm" onclick="clearAndReload()" style="color:var(--grn);border-color:var(--gdim);white-space:nowrap">↻ Sync</button>
   </div>
+  <div class="empty" id="archEmpty"><div class="empty-ico">🗂️</div><p>No archived days yet.<br>Tap Archive in Today's Log.</p><br><small>3-year retention</small></div>
   <div id="archList"></div>
 </div></div>
 <!-- TOTALS -->
@@ -1121,10 +1123,32 @@ function archiveDay(){
   queue=[];saveQ();renderLog();renderArchive();renderTotals();
   toast('✓ '+today+' archived permanently');
 }
+function populateArchiveCustFilter(){
+  var sel = document.getElementById('archCustFilter');
+  if(!sel) return;
+  var cur = sel.value;
+  // Collect all unique customer names from archive
+  var custs = [];
+  archive.forEach(function(day){
+    day.entries.forEach(function(e){
+      if(e.customer && custs.indexOf(e.customer) < 0) custs.push(e.customer);
+    });
+  });
+  custs.sort();
+  sel.innerHTML = '<option value="">All Customers</option>'
+    + custs.map(function(c){
+        return '<option value="'+c+'"'+(c===cur?' selected':'')+'>'+c+'</option>';
+      }).join('');
+  if(cur) sel.value = cur;
+}
+
 function renderArchive(){
   var list = document.getElementById('archList');
   var empty = document.getElementById('archEmpty');
   if(!list) return;
+
+  // Populate customer filter dropdown
+  populateArchiveCustFilter();
 
   // Build month list from availableTabs + any local archive data
   var months = {};
@@ -1143,7 +1167,15 @@ function renderArchive(){
     var mo = p[0].length < 2 ? '0'+p[0] : p[0];
     var mk = p[2]+'-'+mo;
     if(!months[mk]) months[mk] = {tab: tabFromMonthKey(mk), label: moL(p[0],p[2]), days: [], fromSheets: false};
-    months[mk].days.push(day);
+    // Apply customer filter
+    var custFilter = (document.getElementById('archCustFilter')||{value:''}).value;
+    var dayToAdd = day;
+    if(custFilter){
+      var filtered = day.entries.filter(function(e){ return e.customer === custFilter; });
+      if(!filtered.length) return; // skip day if no matching entries
+      dayToAdd = {date: day.date, entries: filtered};
+    }
+    months[mk].days.push(dayToAdd);
   });
 
   var keys = Object.keys(months).sort().reverse();
@@ -1235,15 +1267,6 @@ function tAFetch(mk, tab){
 
 
 function tA(mk){var b=document.getElementById('ab-'+mk);if(b)b.classList.toggle('open');}
-function debugArchive(){
-  var msg = 'archive length: '+archive.length+'\n';
-  msg += 'loadedTabs: '+JSON.stringify(Object.keys(loadedTabs))+'\n';
-  msg += 'availableTabs: '+JSON.stringify(availableTabs)+'\n\n';
-  archive.slice(0,10).forEach(function(d){
-    msg += 'date: '+d.date+' | entries: '+d.entries.length+'\n';
-  });
-  alert(msg);
-}
 function clearAndReload(){
   if(!confirm('Clear all cached archive data and reload from Sheets?')) return;
   localStorage.removeItem('pda_a');

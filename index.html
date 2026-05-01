@@ -521,11 +521,31 @@ var loadedTabs = {};
 var availableTabs = []; // list of tab names from Sheets
 
 function restoreArchiveFromSheets(){
+  // Normalize any bad dates already in archive
+  archive = archive.map(function(day){
+    day.date = normalizeDate(day.date);
+    return day;
+  }).filter(function(day){ return day.date && day.date.indexOf('/') >= 0; });
+  // Re-merge days with same date after normalization
+  var merged = {};
+  archive.forEach(function(day){
+    if(!merged[day.date]) merged[day.date] = {date:day.date, entries:[]};
+    day.entries.forEach(function(e){
+      var ids = new Set(merged[day.date].entries.map(function(x){return String(x.id);}));
+      if(!ids.has(String(e.id))) merged[day.date].entries.push(e);
+    });
+  });
+  archive = Object.values(merged);
+  saveA();
   setSUI('go','loading…');
   // Just get the list of available tabs — don't fetch all data yet
   api({action:'getLogTabs'},
     function(d){
-      availableTabs = d.tabs || [];
+      // Filter out FP_ tabs and other non-log tabs client-side as backup
+      var nonLogTabs = ['Customers','Services','Products','SyncQueue'];
+      availableTabs = (d.tabs || []).filter(function(t){
+        return nonLogTabs.indexOf(t) < 0 && t.indexOf('FP_') !== 0;
+      });
       setSUI('ok','synced ✓');
       renderArchive();
       renderTotals();
@@ -554,22 +574,10 @@ function loadTabFromSheets(tab, callback){
         var byDate = {};
         r.entries.forEach(function(entry){
           if(!entry.customer) return;
-          // Ensure valid date - handle multiple formats
-          if(!entry.date || entry.date.indexOf('/') < 0){
-            // Try to parse ISO format e.g. "2026-03-09T04:00:00.000Z"
-            if(entry.date && entry.date.indexOf('-') >= 0){
-              var iso = entry.date.split('T')[0].split('-');
-              if(iso.length === 3){
-                entry.date = iso[1]+'/'+iso[2]+'/'+iso[0]; // MM/DD/YYYY
-              }
-            } else {
-              // Last resort: use tab name with row-based day offset
-              // Don't do this - just skip entries with no valid date
-              entry.date = null;
-            }
-          }
-          if(!entry.date) return; // skip entries with no parseable date
-          if(!byDate[entry.date]) byDate[entry.date] = [];
+          // Normalize date to MM/DD/YYYY
+          entry.date = normalizeDate(entry.date);
+          if(!entry.date) return;
+                    if(!byDate[entry.date]) byDate[entry.date] = [];
           byDate[entry.date].push(entry);
         });
 
@@ -1445,6 +1453,29 @@ function populateTotalsDropdown(){
   sel.style.display=show?'':'none';
 }
 
+
+function normalizeDate(d){
+  if(!d) return '';
+  if(typeof d === 'string'){
+    // Already MM/DD/YYYY
+    if(d.match(/^\d{1,2}\/\d{1,2}\/\d{4}$/)) return d;
+    // ISO format: 2026-03-09T...
+    if(d.indexOf('T') >= 0 || d.match(/^\d{4}-\d{2}-\d{2}/)){
+      var iso = d.split('T')[0].split('-');
+      if(iso.length === 3) return iso[1]+'/'+iso[2]+'/'+iso[0];
+    }
+    // Date object toString: "Wed Apr 01 2026 00:00:00..."
+    var m = d.match(/(\w+)\s+(\w+)\s+(\d+)\s+(\d{4})/);
+    if(m){
+      var months={Jan:'01',Feb:'02',Mar:'03',Apr:'04',May:'05',Jun:'06',
+                  Jul:'07',Aug:'08',Sep:'09',Oct:'10',Nov:'11',Dec:'12'};
+      var mo=months[m[2]]||'01';
+      var dy=m[3].padStart(2,'0');
+      return mo+'/'+dy+'/'+m[4];
+    }
+  }
+  return String(d);
+}
 
 function parseEntryDate(dateStr){
   // Safely parse MM/DD/YYYY date string

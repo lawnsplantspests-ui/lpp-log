@@ -1029,11 +1029,28 @@ function onSqCatType(cat){
   updateTotalsPreview();
 }
 function onSvc(){var s=document.getElementById('sSel').value;var card=document.getElementById('pcard'),grid=document.getElementById('pgrd'),note=document.getElementById('multiNote');if(!s||!SV[s]){card.classList.remove('show');return;}var d=SV[s];grid.innerHTML=[['Product',jn(d.products,'product')],['Active Ing',jn(d.products,'activeIng')],['EPA Reg #',jn(d.products,'epa')],['Rate',jn(d.products,'rate')],['Method',jn(d.products,'method')],['Target Pest',jn(d.products,'targetPest')],['App Site',d.appSite]].map(function(kv){return'<span class="pk">'+kv[0]+'</span><span class="pv">'+kv[1]+'</span>';}).join('');note.innerHTML=d.products.length>1?'<div class="multi-note">⚡ '+d.products.length+' products — combined into 1 log entry</div>':'';card.classList.add('show');populateSiteDropdown(d.appSite);
-  // Show correct sq ft field — always show, even if no customer selected
   var custName=document.getElementById('cSel').value;
   var cat=getSvcCat(s);
+  // Always reset ALL sq ft fields first, then show only the right one
+  hideSqFlds();
+  var otFld=document.getElementById('onetimeSqFld');
+  if(otFld) otFld.style.display='none';
+  var otIn=document.getElementById('onetimeSqIn');
+  if(otIn){otIn.value='';otIn.style.borderColor='';}
+  // Reset all sq inputs
+  ['sqLawn','sqPHC','sqPest','sqAquatic'].forEach(function(id){
+    var el=document.getElementById(id);
+    if(el){el.value='';el.style.cssText='';}
+  });
   var sprayable = (cat === 'lawn');
   showSprayToggle(sprayable);
+  if(!sprayable){
+    var sf=document.getElementById('spotSqFld');
+    if(sf) sf.style.display='none';
+    var si=document.getElementById('spotSqIn');
+    if(si) si.value='';
+    sprayMode='full';
+  }
   showSqForCat(custName, cat);
   updateTotalsPreview();}
 function addEntry(){var cust=document.getElementById('cSel').value;var svc=document.getElementById('sSel').value;if(!cust){toast('⚠ Select a customer');return;}if(!svc){toast('⚠ Select a service');return;}clock();var d=SV[svc];var svcCat=getSvcCat(svc);

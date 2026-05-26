@@ -2011,10 +2011,18 @@ function getLibDropdownOptions(includeBlank){
   return opts;
 }
 function libSelect(fillFn){
-  // Returns HTML with a placeholder — populateLibDDs will fill options after modal opens
+  // Build options directly at call time — no need to wait for populateLibDDs
+  var lib=getProdLibrary().slice().sort(function(a,b){return(a.product||'').localeCompare(b.product||'');});
+  var opts='<option value="">— Select from library —</option>';
+  lib.forEach(function(p){
+    var tag=getMethodTag(p.method||'');
+    // Encode JSON safely for use as option value
+    var val=encodeURIComponent(JSON.stringify(p));
+    opts+='<option value="'+val+'">'+p.product+tag+'</option>';
+  });
   return '<div class="prod-field"><label>Product Library</label>'
     +'<select class="ep-product-dd" data-fillfn="'+fillFn+'" style="width:100%;background:var(--sur);border:1px solid var(--gdim);border-radius:7px;padding:7px 10px;color:var(--txt);font-size:13px;appearance:none;-webkit-appearance:none" onchange="libSelectFill(this)">'
-    +'<option value="">— Select from library —</option>'
+    +opts
     +'</select></div>';
 }
 

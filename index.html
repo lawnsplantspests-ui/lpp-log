@@ -2011,47 +2011,59 @@ function getLibDropdownOptions(includeBlank){
   return opts;
 }
 function libSelect(fillFn){
-  // Build options directly at call time — no need to wait for populateLibDDs
-  var lib=getProdLibrary().slice().sort(function(a,b){return(a.product||'').localeCompare(b.product||'');});
-  var opts='<option value="">— Select from library —</option>';
-  lib.forEach(function(p){
-    var tag=getMethodTag(p.method||'');
-    // Encode JSON safely for use as option value
-    var val=encodeURIComponent(JSON.stringify(p));
-    opts+='<option value="'+val+'">'+p.product+tag+'</option>';
-  });
-  return '<div class="prod-field"><label>Product Library</label>'
+  // Return a placeholder - buildLibSelects() will populate it via DOM after appendChild
+  return '<div class="prod-field lib-sel-wrap"><label>Product Library</label>'
     +'<select class="ep-product-dd" data-fillfn="'+fillFn+'" style="width:100%;background:var(--sur);border:1px solid var(--gdim);border-radius:7px;padding:7px 10px;color:var(--txt);font-size:13px;appearance:none;-webkit-appearance:none" onchange="libSelectFill(this)">'
-    +opts
+    +'<option value="">— Select from library —</option>'
     +'</select></div>';
 }
 
+function buildLibSelects(container){
+  // Build select options via DOM methods — avoids HTML encoding issues
+  var lib=getProdLibrary().slice().sort(function(a,b){
+    return(a.product||'').localeCompare(b.product||'');
+  });
+  var sels=(container||document).querySelectorAll('.ep-product-dd');
+  sels.forEach(function(sel){
+    // Clear and rebuild
+    while(sel.options.length) sel.remove(0);
+    var blank=document.createElement('option');
+    blank.value='';
+    blank.textContent='— Select from library —';
+    sel.appendChild(blank);
+    lib.forEach(function(p){
+      var opt=document.createElement('option');
+      // Store JSON directly on option as dataset — no encoding issues
+      opt.dataset.prod=JSON.stringify(p);
+      opt.value=opt.dataset.prod;
+      var tag=getMethodTag(p.method||'');
+      opt.textContent=p.product+tag;
+      sel.appendChild(opt);
+    });
+  });
+}
+
 function libSelectFill(sel){
+  // Read product data from dataset (set by buildLibSelects)
+  var opt=sel.options[sel.selectedIndex];
+  if(opt&&opt.dataset&&opt.dataset.prod){
+    sel.value=opt.dataset.prod; // temp set so fill functions can read it
+  }
   var fn=sel.dataset.fillfn||'fillEditLib';
   if(fn==='fillNewLib') fillNewLib(sel);
   else fillEditLib(sel);
+  sel.selectedIndex=0; // reset to placeholder after fill
 }
 
 function populateLibDDs(){
-  var lib=getProdLibrary().slice().sort(function(a,b){return(a.product||'').localeCompare(b.product||'');});
-  // Build options even if lib is short — show what we have
-  var opts='<option value="">— Select from library —</option>';
-  lib.forEach(function(p){
-    var tag=getMethodTag(p.method||'');
-    opts+='<option value="'+encodeURIComponent(JSON.stringify(p))+'">'+p.product+tag+'</option>';
-  });
-  var sels=document.querySelectorAll('.ep-product-dd');
-  if(!sels.length) return;
-  sels.forEach(function(sel){
-    var cur=sel.value;
-    sel.innerHTML=opts;
-    if(cur) sel.value=cur;
-  });
+  buildLibSelects(document);
 }
 function fillNewLib(sel){
-  if(!sel.value) return;
+  var opt=sel.options[sel.selectedIndex];
+  var raw=(opt&&opt.dataset&&opt.dataset.prod)?opt.dataset.prod:sel.value;
+  if(!raw) return;
   try{
-    var p=JSON.parse(decodeURIComponent(sel.value));
+    var p=JSON.parse(raw);
     var d=sel.closest('.sub-prod');
     var nameEl=d.querySelector('.np-product,.ep-product');
     var aiEl=d.querySelector('.np-active,.ep-active');
@@ -2072,9 +2084,11 @@ function fillNewLib(sel){
   }catch(e){console.warn('fillNewLib:',e);}
 }
 function fillEditLib(sel){
-  if(!sel.value) return;
+  var opt=sel.options[sel.selectedIndex];
+  var raw=(opt&&opt.dataset&&opt.dataset.prod)?opt.dataset.prod:sel.value;
+  if(!raw) return;
   try{
-    var p=JSON.parse(decodeURIComponent(sel.value));
+    var p=JSON.parse(raw);
     var d=sel.closest('.sub-prod');
     var nameEl=d.querySelector('.ep-product,.np-product');
     var aiEl=d.querySelector('.ep-active,.np-active');
@@ -2109,10 +2123,11 @@ function addNewProdField(){
   c.appendChild(div);
 }
 function addSvc(){var name=document.getElementById('newSvcName').value.trim();if(!name){toast('⚠ Enter a service name');return;}if(SV[name]){toast('⚠ Already exists');return;}var prods=[];document.querySelectorAll('#newProdsContainer .sub-prod').forEach(function(div){prods.push({product:div.querySelector('.np-product').value.trim(),activeIng:div.querySelector('.np-active').value.trim(),epa:div.querySelector('.np-epa').value.trim(),rate:div.querySelector('.np-rate').value.trim(),totalMixed:div.querySelector('.np-mixed').value.trim()||'Record gal applied',method:div.querySelector('.np-method').value.trim(),targetPest:div.querySelector('.np-pest').value.trim()});});SV[name]={appSite:document.getElementById('newSvcSite').value,notes:document.getElementById('newSvcNotes').value.trim(),products:prods};saveSV();buildDD();renderProds();document.getElementById('newSvcName').value='';document.getElementById('newSvcNotes').value='';document.getElementById('newProdsContainer').innerHTML='<div class="sub-prod"><div class="sub-prod-hdr"><span class="sub-prod-num">Product 1</span></div><div class="prod-field"><label>Product Name</label><select class="ep-product-dd" onchange="fillProdFromLib(this)" style="width:100%;background:var(--sur);border:1px solid var(--bdr);border-radius:7px;padding:7px 10px;color:var(--txt);font-size:13px;margin-bottom:4px;appearance:none;-webkit-appearance:none"><option value="">— Select from library —</option></select><input type="text" class="np-product" placeholder="Or type product name"></div><div class="prod-field"><label>Active Ingredient</label><input type="text" class="np-active"></div><div class="prod-field"><label>EPA Reg #</label><input type="text" class="np-epa"></div><div class="prod-field"><label>Rate</label><input type="text" class="np-rate" placeholder="e.g. 0.34 gal / 1000 sqft"></div><div class="prod-field"><label>Total Mixed</label><input type="text" class="np-mixed"></div><div class="prod-field"><label>Method</label><input type="text" class="np-method"></div><div class="prod-field"><label>Target Pest</label><input type="text" class="np-pest"></div></div>';newProdCount=1;toast('✓ '+name+' added');}
-function openEditSvc(pid){var key=decodeURIComponent(atob(pid));editSvcKey=key;var d=SV[key];document.getElementById('epName').value=key;setSel('epSite',d.appSite);document.getElementById('epNotes').value=d.notes||'';var c=document.getElementById('editProdsContainer');c.innerHTML='';d.products.forEach(function(p,i){var div=document.createElement('div');div.className='sub-prod';div.innerHTML='<div class="sub-prod-hdr"><span class="sub-prod-num">Product '+(i+1)+'</span>'+(d.products.length>1?'<button class="btn-del" onclick="this.closest(\'.sub-prod\').remove()">×</button>':'')+'</div>'+libSelect('fillEditLib')+'<div class="prod-field"><label>Product Name</label><input type="text" class="ep-product" value="'+esc(p.product)+'"></div><div class="prod-field"><label>Active Ingredient</label><input type="text" class="ep-active" value="'+esc(p.activeIng)+'"></div><div class="prod-field"><label>EPA Reg #</label><input type="text" class="ep-epa" value="'+esc(p.epa)+'"></div><div class="prod-field"><label>Rate</label><input type="text" class="ep-rate" value="'+esc(p.rate)+'"></div><div class="prod-field"><label>Total Mixed</label><input type="text" class="ep-mixed" value="'+esc(p.totalMixed)+'"></div><div class="prod-field"><label>Method</label><input type="text" class="ep-method" value="'+esc(p.method)+'"></div><div class="prod-field"><label>Target Pest</label><input type="text" class="ep-pest" value="'+esc(p.targetPest)+'"></div>';c.appendChild(div);});document.getElementById('editSvcModal').classList.add('show');
-  // Populate immediately then again after render settles
-  populateLibDDs();
-  setTimeout(function(){populateLibDDs();},200);
+function openEditSvc(pid){var key=decodeURIComponent(atob(pid));editSvcKey=key;var d=SV[key];document.getElementById('epName').value=key;setSel('epSite',d.appSite);document.getElementById('epNotes').value=d.notes||'';var c=document.getElementById('editProdsContainer');c.innerHTML='';d.products.forEach(function(p,i){var div=document.createElement('div');div.className='sub-prod';div.innerHTML='<div class="sub-prod-hdr"><span class="sub-prod-num">Product '+(i+1)+'</span>'+(d.products.length>1?'<button class="btn-del" onclick="this.closest(\'.sub-prod\').remove()">×</button>':'')+'</div>'+libSelect('fillEditLib')+'<div class="prod-field"><label>Product Name</label><input type="text" class="ep-product" value="'+esc(p.product)+'"></div><div class="prod-field"><label>Active Ingredient</label><input type="text" class="ep-active" value="'+esc(p.activeIng)+'"></div><div class="prod-field"><label>EPA Reg #</label><input type="text" class="ep-epa" value="'+esc(p.epa)+'"></div><div class="prod-field"><label>Rate</label><input type="text" class="ep-rate" value="'+esc(p.rate)+'"></div><div class="prod-field"><label>Total Mixed</label><input type="text" class="ep-mixed" value="'+esc(p.totalMixed)+'"></div><div class="prod-field"><label>Method</label><input type="text" class="ep-method" value="'+esc(p.method)+'"></div><div class="prod-field"><label>Target Pest</label><input type="text" class="ep-pest" value="'+esc(p.targetPest)+'"></div>';c.appendChild(div);});
+  document.getElementById('editSvcModal').classList.add('show');
+  // Build selects via DOM after all divs are appended
+  buildLibSelects(document.getElementById('editProdsContainer'));
+  setTimeout(function(){buildLibSelects(document.getElementById('editProdsContainer'));},200);
 }
 
 function addEditProdField(){
@@ -2129,6 +2144,7 @@ function addEditProdField(){
     +'<div class="prod-field"><label>Method</label><input type="text" class="ep-method"></div>'
     +'<div class="prod-field"><label>Target Pest</label><input type="text" class="ep-pest"></div>';
   c.appendChild(div);
+  buildLibSelects(div);
 }
 function closeEditSvc(){document.getElementById('editSvcModal').classList.remove('show');editSvcKey=null;}
 function saveEditSvc(){

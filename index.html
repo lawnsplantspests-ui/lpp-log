@@ -950,7 +950,13 @@ function onCust(){
   updateTotalsPreview();
 }
 function hideSqFlds(){
+  // Hide by class
   document.querySelectorAll('.sq-cat').forEach(function(f){f.style.display='none';});
+  // Also hide by id as backup (in case class was changed)
+  ['sqLawnFld','sqPHCFld','sqPestFld','sqAquaticFld'].forEach(function(id){
+    var el=document.getElementById(id);
+    if(el) el.style.display='none';
+  });
 }
 function showSqForCat(custName, cat){
   // Hide all standard sq ft fields and one-time field
@@ -1000,12 +1006,12 @@ function showSqForCat(custName, cat){
     if(lbl) lbl.textContent = m.label + ' — on file: ' + Number(val).toLocaleString() + ' sqft';
     inp.placeholder = val;
     inp.style.color = 'var(--dim)';
-    fld.className = 'fld sq-known';
+    fld.className = 'fld sq-cat sq-known';
   } else {
     if(lbl) lbl.textContent = m.label + ' — required';
     inp.placeholder = 'enter sq ft to continue';
     inp.style.borderColor = 'var(--red)';
-    fld.className = 'fld sq-needed';
+    fld.className = 'fld sq-cat sq-needed';
   }
 }
 

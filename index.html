@@ -146,6 +146,27 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans)}
 .empty p{font-size:13px;line-height:1.8}.empty small{font-size:11px;font-family:var(--mono)}
 .toast{position:fixed;bottom:72px;left:50%;transform:translateX(-50%) translateY(12px);background:var(--sur2);border:1px solid var(--gdim);color:var(--grn);padding:7px 14px;border-radius:24px;font-size:11px;font-family:var(--mono);opacity:0;transition:all .2s;z-index:1000;pointer-events:none;white-space:nowrap}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+.lbl-note{font-size:11px;color:var(--mut);line-height:1.7;margin-bottom:10px}
+.lbl-row{background:var(--sur);border:1px solid var(--bdr);border-radius:10px;padding:10px 12px;margin-bottom:7px}
+.lbl-nm{font-size:13px;color:var(--txt);font-weight:600;line-height:1.4}
+.lbl-ai{font-size:11px;color:var(--mut);font-family:var(--mono);margin-top:2px}
+.lbl-btm{display:flex;justify-content:space-between;align-items:center;margin-top:8px;gap:10px;flex-wrap:wrap}
+.lbl-epa{font-size:11px;font-family:var(--mono);color:var(--grn)}
+.lbl-lnk{font-size:11px;font-family:var(--mono);color:var(--grn);border:1px solid var(--gdim);border-radius:6px;padding:4px 9px;text-decoration:none;white-space:nowrap}
+.lbl-warn{font-size:11px;font-family:var(--mono);color:#e0a030}
+.lbl-uses{font-size:10px;color:var(--mut);margin-top:6px;line-height:1.6}
+.lbl-url{display:none}
+@media print{
+  .hdr,.tabs,.search-bar,.btn-sm,.btn-primary,.toast,#lblActions{display:none!important}
+  .pg{display:none!important}
+  #pg-lbls{display:block!important}
+  body,.body{background:#fff!important;color:#000!important}
+  .lbl-row{border:0;border-bottom:1px solid #bbb;border-radius:0;padding:6px 0;margin:0;page-break-inside:avoid}
+  .lbl-nm,.lbl-ai,.lbl-epa,.lbl-uses,.lbl-warn{color:#000!important}
+  .lbl-lnk{border:0;padding:0;color:#000!important}
+  .lbl-url{display:block;font-size:8px;color:#444!important;word-break:break-all;margin-top:2px}
+}
 </style></head>
 <body>
 <div class="hdr">
@@ -164,6 +185,7 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans)}
   <div class="tab" id="tab-cust" onclick="goTab('cust')">CUSTOMERS</div>
   <div class="tab" id="tab-prod" onclick="goTab('prod');renderProds()">SERVICES</div>
 <div class="tab" id="tab-lib" onclick="goTab('lib');renderLibProducts()">PRODUCTS</div>
+<div class="tab" id="tab-lbls" onclick="goTab('lbls');renderLabels()">LABELS</div>
 </div>
 <!-- ENTRY -->
 <div class="pg on" id="pg-new"><div class="body">
@@ -352,6 +374,19 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans)}
     <button class="btn-primary" onclick="addLibProduct()" style="margin-top:4px">Save to Product Library</button>
   </div>
   <div id="libList"></div>
+</div></div>
+<!-- LABELS -->
+<div class="pg" id="pg-lbls"><div class="body">
+  <div id="lblActions" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+    <div class="tot-sec" style="margin:0">Product Labels</div>
+    <button class="btn-sm" onclick="window.print()" style="color:var(--grn);border-color:var(--gdim)">Print checklist</button>
+  </div>
+  <div class="lbl-note">Every product used in the app, with a link to its official EPA label.
+  Open each one and print it for the PA Dept of Ag file. Anything marked NEEDS EPA # has no
+  valid registration number on record yet - read it off the container.</div>
+  <div class="search-bar" style="margin-bottom:10px"><span style="color:var(--mut)">&#128269;</span><input type="text" id="lblQ" placeholder="Search products..." oninput="renderLabels()"></div>
+  <div id="lblSummary" class="lbl-note"></div>
+  <div id="lblList"></div>
 </div></div>
 <!-- EDIT MODAL -->
 <div class="modal-bg" id="editSvcModal" onclick="if(event.target===this)closeEditSvc()">
@@ -2209,6 +2244,82 @@ function saveEditSvc(){
 function deleteSvc(pid){var key=decodeURIComponent(atob(pid));if(!confirm('Delete "'+key+'"? Cannot be undone.'))return;delete SV[key];saveSV();buildDD();renderProds();toast('Service deleted');}
 function escQ(s){return(s||'').replace(/'/g,"\\'");}
 function esc(s){return(s||'').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+// -- LABELS PAGE ------------------------------------------------
+// PA Dept of Ag wants a printed label on file for every product applied.
+// EPA's PPLS database is the authoritative source, keyed by registration number.
+function lblEsc(x){
+  return String(x==null?'':x).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+// A registration is company-product, optionally with a distributor suffix.
+function epaLabelUrl(reg){
+  // Anchored: free text like "VERIFY FROM BAG - stored 241-341 is ..." or
+  // "Per bag label (Spring Valley 15-0-3)" must NOT yield a link.
+  var m = String(reg||'').match(/^ *([0-9]{2,6}-[0-9]{1,6}(?:-[0-9]{1,6})?)(?![0-9-])/);
+  if(!m) return null;
+  return 'https://ordspub.epa.gov/ords/pesticides/f?p=PPLS:102:::::P102_REG_NUM:'+m[1];
+}
+// One row per distinct product, listing every service it is used by.
+function collectLabelProducts(){
+  var seen={}, out=[];
+  function add(p, where){
+    var name=String(p.product||'').trim();
+    if(!name) return;
+    var key=name.toLowerCase();
+    if(seen[key]){
+      if(where && seen[key].uses.indexOf(where)<0) seen[key].uses.push(where);
+      return;
+    }
+    var rec={product:name, activeIng:String(p.activeIng||'').trim(),
+             epa:String(p.epa||'').trim(), uses:where?[where]:[]};
+    seen[key]=rec; out.push(rec);
+  }
+  var svc=(typeof SV==='object'&&SV)?SV:{};
+  Object.keys(svc).forEach(function(n){
+    (svc[n].products||[]).forEach(function(p){ add(p,n); });
+  });
+  if(typeof productLib!=='undefined' && productLib && productLib.length)
+    productLib.forEach(function(p){ add(p,'Product Library'); });
+  out.sort(function(a,b){ return a.product.toLowerCase()<b.product.toLowerCase()?-1:1; });
+  return out;
+}
+function renderLabels(){
+  var box=document.getElementById('lblList');
+  if(!box) return;
+  var qEl=document.getElementById('lblQ');
+  var q=(qEl?qEl.value:'').trim().toLowerCase();
+  var all=collectLabelProducts();
+  var rows=all.filter(function(r){
+    if(!q) return true;
+    return (r.product+' '+r.activeIng+' '+r.epa).toLowerCase().indexOf(q)>=0;
+  });
+  var linked=0, need=0;
+  var html=rows.map(function(r){
+    var url=epaLabelUrl(r.epa);
+    // Fertilizers and soil amendments are not pesticides - no label to file.
+    var exempt=/^n\/a/i.test(r.epa)||/fertilizer only|soil amendment|biological|bacteria/i.test(r.activeIng);
+    if(url) linked++; else if(!exempt) need++;
+    var right;
+    if(url){
+      right='<a class="lbl-lnk" href="'+lblEsc(url)+'" target="_blank" rel="noopener">Open EPA label</a>'
+           +'<span class="lbl-url">'+lblEsc(url)+'</span>';
+    } else if(exempt){
+      right='<span class="lbl-epa" style="color:var(--mut)">No label required</span>';
+    } else {
+      right='<span class="lbl-warn">NEEDS EPA #</span>';
+    }
+    return '<div class="lbl-row">'
+      +'<div class="lbl-nm">'+lblEsc(r.product)+'</div>'
+      +(r.activeIng?'<div class="lbl-ai">'+lblEsc(r.activeIng)+'</div>':'')
+      +'<div class="lbl-btm"><span class="lbl-epa">'+lblEsc(r.epa||'(no EPA # on record)')+'</span>'+right+'</div>'
+      +(r.uses.length?'<div class="lbl-uses">Used by: '+lblEsc(r.uses.join(' | '))+'</div>':'')
+      +'</div>';
+  }).join('');
+  box.innerHTML=html||'<div class="empty"><div class="empty-ico">&#128209;</div><p>No products match.</p></div>';
+  var sum=document.getElementById('lblSummary');
+  if(sum) sum.textContent=rows.length+' of '+all.length+' products shown - '
+    +linked+' with an EPA label link'+(need?', '+need+' still need a registration number':'');
+}
 function goTab(t){document.querySelectorAll('.tab').forEach(function(x){x.classList.remove('on');});document.querySelectorAll('.pg').forEach(function(x){x.classList.remove('on');});document.getElementById('tab-'+t).classList.add('on');document.getElementById('pg-'+t).classList.add('on');window.scrollTo(0,0);}
 function toast(msg){var t=document.getElementById('toast');t.textContent=msg;t.className='toast show';setTimeout(function(){t.className='toast';},3000);}
 </script></body></html>

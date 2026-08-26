@@ -760,6 +760,17 @@ function calcMixed(rate, sqFt) {
   return fmtAmt(gk.lo*sqK, gk.hi*sqK, 'gal', ' spray mix');
 }
 
+// Tank concentration multiplier, written "3x" or "@ 3x" in the rate string.
+// The Z-Spray runs 3x the label per-gallon rate because it only puts out
+// ~0.34 gal/1000 sqft instead of ~1 gal - the two cancel, so the product per
+// 1000 sqft comes out the same as a backpack at label rate. Recording it this
+// way makes the log match what actually went in the tank.
+function tankMult(r){
+  var m = r.match(/([0-9.]+) ?x(?![a-z0-9])/);
+  var v = m ? parseFloat(m[1]) : 1;
+  return (v > 0 && v < 100) ? v : 1;
+}
+
 // Amount of PRODUCT (granular or concentrate) applied -> "Total Used".
 function calcTotal(rate, sqFt) {
   if (!sqFt || !rate) return '';
@@ -769,9 +780,9 @@ function calcTotal(rate, sqFt) {
   // 1. A stated product-per-1000 rate wins - it is rig-independent.
   var pk = prodPerK(r);
   if (pk) return fmtAmt(pk.lo*sqK, pk.hi*sqK, pk.unit);
-  // 2. Otherwise derive it: product per gallon x gallons of mix put out.
-  var pg = prodPerGal(r), gk = galPerK(r);
-  if (pg && gk) return fmtAmt(pg.lo*gk.lo*sqK, pg.hi*gk.hi*sqK, pg.unit);
+  // 2. Otherwise derive it: per-gallon rate x tank multiplier x gallons put out.
+  var pg = prodPerGal(r), gk = galPerK(r), x = tankMult(r);
+  if (pg && gk) return fmtAmt(pg.lo*x*gk.lo*sqK, pg.hi*x*gk.hi*sqK, pg.unit);
   // 3. A bare gal/1000 is water, not product - calcMixed reports it instead.
   return '';
 }

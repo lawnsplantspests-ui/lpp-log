@@ -702,30 +702,77 @@ function syncEntry(entry){
 
 function jn(arr,f){ return arr.map(function(p){return p[f]||'';}).join(' + '); }
 
-// ── TOTALS CALCULATOR ────────────────────────────────────────────
+// ── TOTALS CALCULATOR ────────────────────────────────
+// Two things live in a rate string and they are NOT the same number:
+//   product rate  - lbs / oz / fl oz per 1000 sqft  -> "Total Used"
+//   spray output  - gallons of water per 1000 sqft  -> "Total Mixed"
+// Gallons per 1000 sqft is always carrier volume; no liquid concentrate is
+// ever dosed by the gallon per 1000 sqft.
+//
+// Note on the two rigs: the Z-Spray runs 3x label rate at ~0.34 gal/1000,
+// the backpack runs label rate at ~1 gal/1000. Both put down the SAME
+// product per 1000 sqft, so one per-1000 product rate covers both; only the
+// gallons of water differ.
+
+// "fl oz" must precede "oz" in the alternation, and ranges must be tried
+// before singles - otherwise "2-3 lbs / 1000" matches on the "3" and
+// silently logs the high end of the range.
+var PROD_UNIT = 'fl[ ]*oz|lbs?|oz';
+var NUM = '([0-9.]+)', WS = '[ ]*';
+
+function normUnit(u){
+  u = u.replace(/ /g,'');
+  if (u === 'lb')   return 'lbs';
+  if (u === 'floz') return 'fl oz';
+  return u;
+}
+// Pull "X unit / <per>" or "X-Y unit / <per>" out of a rate string.
+function rateFor(r, units, per){
+  var u = '(' + units + ')';
+  var mr = r.match(new RegExp(NUM+WS+'-'+WS+NUM+WS+u+WS+'/'+WS+per));
+  if (mr) return {lo:parseFloat(mr[1]), hi:parseFloat(mr[2]), unit:normUnit(mr[3])};
+  var m  = r.match(new RegExp(NUM+WS+u+WS+'/'+WS+per));
+  if (m)  return {lo:parseFloat(m[1]),  hi:parseFloat(m[1]),  unit:normUnit(m[2])};
+  return null;
+}
+function prodPerK(r){   return rateFor(r, PROD_UNIT, '1000'); }  // product per 1000 sqft
+function prodPerGal(r){ return rateFor(r, PROD_UNIT, 'gal');  }  // product per gal of mix
+function galPerK(r){    return rateFor(r, 'gal',     '1000'); }  // spray output per 1000 sqft
+function skipRate(r){
+  return r.indexOf('record')>=0 || r.indexOf('per void')>=0 || r.indexOf('direct')>=0;
+}
+// Midpoint for ranges, flagged "(avg)" so the log never quietly records the
+// high end of a range as if it were the amount actually applied.
+function fmtAmt(lo, hi, unit, suffix){
+  var isRange = Math.abs(hi-lo) > 1e-9;
+  var v = isRange ? (lo+hi)/2 : lo;
+  return v.toFixed(2)+' '+unit+(suffix||'')+(isRange?' (avg)':'');
+}
+
+// Gallons of finished spray put out over the area -> "Total Mixed".
+function calcMixed(rate, sqFt) {
+  if (!sqFt || !rate) return '';
+  var r = rate.toLowerCase();
+  if (skipRate(r)) return '';
+  var gk = galPerK(r);
+  if (!gk) return '';
+  var sqK = parseFloat(sqFt) / 1000;
+  return fmtAmt(gk.lo*sqK, gk.hi*sqK, 'gal', ' spray mix');
+}
+
+// Amount of PRODUCT (granular or concentrate) applied -> "Total Used".
 function calcTotal(rate, sqFt) {
   if (!sqFt || !rate) return '';
   var r = rate.toLowerCase();
-  if (r.indexOf('record') >= 0) return '';
-  if (r.indexOf('per void') >= 0 || r.indexOf('direct') >= 0) return '';
+  if (skipRate(r)) return '';
   var sqK = parseFloat(sqFt) / 1000;
-  // Match "X unit / 1000 sqft" anywhere in string
-  var m = r.match(/([\d.]+)\s*(lbs?|oz|fl\s*oz|gal)\s*\/\s*1000/);
-  if (m) {
-    var amt = parseFloat(m[1]);
-    var unit = m[2].replace(/\s/g,'');
-    if (unit==='lb') unit='lbs';
-    if (unit==='floz') unit='fl oz';
-    return (amt * sqK).toFixed(2) + ' ' + unit;
-  }
-  // Match range like "2-3 lbs / 1000" — use midpoint
-  var mr = r.match(/([\d.]+)-([\d.]+)\s*(lbs?|oz|fl\s*oz|gal)\s*\/\s*1000/);
-  if (mr) {
-    var mid = (parseFloat(mr[1]) + parseFloat(mr[2])) / 2;
-    var unit = mr[3].replace(/\s/g,'');
-    if (unit==='lb') unit='lbs';
-    return (mid * sqK).toFixed(2) + ' ' + unit + ' (avg)';
-  }
+  // 1. A stated product-per-1000 rate wins - it is rig-independent.
+  var pk = prodPerK(r);
+  if (pk) return fmtAmt(pk.lo*sqK, pk.hi*sqK, pk.unit);
+  // 2. Otherwise derive it: product per gallon x gallons of mix put out.
+  var pg = prodPerGal(r), gk = galPerK(r);
+  if (pg && gk) return fmtAmt(pg.lo*gk.lo*sqK, pg.hi*gk.hi*sqK, pg.unit);
+  // 3. A bare gal/1000 is water, not product - calcMixed reports it instead.
   return '';
 }
 
@@ -753,10 +800,12 @@ function updateTotalsPreview() {
   var lines=d.products.map(function(p,pi){
     var useSq=(pi===0||!spotSqFtPrev)?sqFt:spotSqFtPrev;
     var t=calcTotal(p.rate,useSq);
-    if(!t) return '';
+    var mx=calcMixed(p.rate,useSq);
+    var parts=[t,mx].filter(Boolean);
+    if(!parts.length) return '';
     var label=d.products.length>1?p.product+': ':'';
     var note=(pi>0&&spotSqFtPrev)?' (spot)':'';
-    return label+t+note;
+    return label+parts.join(' in ')+note;
   }).filter(Boolean);
   if(lines.length){
     vals.textContent=lines.join(' | ');
@@ -1098,11 +1147,15 @@ function addEntry(){var cust=document.getElementById('cSel').value;var svc=docum
   var spotSqFt='';
   var spotEl=document.getElementById('spotSqIn');
   if(spotEl&&spotEl.style.display!=='none') spotSqFt=spotEl.value.trim();
-  var calcSqFt=sqFt;var sv=document.getElementById('siteOv').value;var appSite=(sv&&sv!=='Use service default')?sv:d.appSite;var userN=document.getElementById('nts').value.trim();var wxTemp=document.getElementById('wxT').value;var combined={product:jn(d.products,'product'),activeIng:jn(d.products,'activeIng'),epa:jn(d.products,'epa'),rate:jn(d.products,'rate'),totalMixed:jn(d.products,'totalMixed'),method:jn(d.products,'method'),targetPest:jn(d.products,'targetPest')};var totals=d.products.map(function(p,pi){
+  var calcSqFt=sqFt;var sv=document.getElementById('siteOv').value;var appSite=(sv&&sv!=='Use service default')?sv:d.appSite;var userN=document.getElementById('nts').value.trim();var wxTemp=document.getElementById('wxT').value;var combined={product:jn(d.products,'product'),activeIng:jn(d.products,'activeIng'),epa:jn(d.products,'epa'),rate:jn(d.products,'rate'),totalMixed:jn(d.products,'totalMixed'),method:jn(d.products,'method'),targetPest:jn(d.products,'targetPest')};var svcSq=d.products.map(function(p,pi){
     // Product 1 always uses full sq ft; product 2+ uses spot sq ft if entered
-    var useSq=(pi===0||!spotSqFt)?sqFt:spotSqFt;
-    return calcTotal(p.rate,useSq);
-  }).filter(Boolean);var tu=totals.join(' + ')||'';var entry={id:Date.now(),customer:cust,service:svc,date:document.getElementById('aDate').textContent,time:document.getElementById('aTime').textContent,sqFt:sqFt,spotSqFt:spotSqFt,totalUsed:tu,weather:document.getElementById('wxC').value,temp:wxTemp?(wxTemp+'°F'):'',wind:document.getElementById('wxW').value,product:combined.product,activeIng:combined.activeIng,epa:combined.epa,rate:combined.rate,totalMixed:combined.totalMixed,method:combined.method,targetPest:combined.targetPest,appSite:appSite,notes:userN?d.notes+' | '+userN:d.notes,synced:false};queue.push(entry);saveQ();renderLog();syncEntry(entry);toast('✓ Added to log');document.getElementById('cSel').value='';document.getElementById('sSel').value='';['sqLawn','sqPHC','sqPest','sqAquatic'].forEach(function(id){
+    return (pi===0||!spotSqFt)?sqFt:spotSqFt;
+  });
+  // Keep one slot per product so the totals report pairs each amount with the
+  // right product name - a filtered-out blank used to shift every later index.
+  var totals=d.products.map(function(p,pi){return calcTotal(p.rate,svcSq[pi]);});
+  var tu=totals.some(Boolean)?totals.map(function(t){return t||'—';}).join(' + '):'';
+  var mixed=d.products.map(function(p,pi){return calcMixed(p.rate,svcSq[pi]);}).filter(Boolean);var entry={id:Date.now(),customer:cust,service:svc,date:document.getElementById('aDate').textContent,time:document.getElementById('aTime').textContent,sqFt:sqFt,spotSqFt:spotSqFt,totalUsed:tu,weather:document.getElementById('wxC').value,temp:wxTemp?(wxTemp+'°F'):'',wind:document.getElementById('wxW').value,product:combined.product,activeIng:combined.activeIng,epa:combined.epa,rate:combined.rate,totalMixed:(mixed.length?mixed.join(' + '):combined.totalMixed),method:combined.method,targetPest:combined.targetPest,appSite:appSite,notes:userN?d.notes+' | '+userN:d.notes,synced:false};queue.push(entry);saveQ();renderLog();syncEntry(entry);toast('✓ Added to log');document.getElementById('cSel').value='';document.getElementById('sSel').value='';['sqLawn','sqPHC','sqPest','sqAquatic'].forEach(function(id){
     var el=document.getElementById(id);
     if(el){el.value='';el.style.cssText='';}
   });

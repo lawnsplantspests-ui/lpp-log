@@ -167,6 +167,17 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans)}
   .lbl-lnk{border:0;padding:0;color:#000!important}
   .lbl-url{display:block;font-size:8px;color:#444!important;word-break:break-all;margin-top:2px}
 }
+
+.tp-row{display:flex;align-items:center;gap:7px;padding:4px 0;flex-wrap:wrap}
+.tp-nm{flex:1 1 110px;font-size:11px;color:var(--mut);font-family:var(--mono);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tp-amt{width:74px;background:var(--sur2);border:1px solid var(--bdr);border-radius:5px;color:var(--grn);font-family:var(--mono);font-size:13px;font-weight:600;padding:3px 6px;text-align:right}
+.tp-amt:focus{outline:none;border-color:var(--gdim)}
+.tp-amt.over{border-color:#e0a030;color:#e0a030}
+.tp-unit{font-size:11px;font-family:var(--mono);color:var(--mut);min-width:38px}
+.tp-tag{font-size:9px;font-family:var(--mono);letter-spacing:.6px;text-transform:uppercase;color:var(--mut);border:1px solid var(--bdr);border-radius:4px;padding:1px 5px}
+.tp-tag.meas{color:var(--grn);border-color:var(--gdim)}
+.tp-warn{font-size:10px;font-family:var(--mono);color:#e0a030;line-height:1.6;margin-top:4px}
+.tp-mix{font-size:10px;font-family:var(--mono);color:var(--mut);margin-top:4px}
 </style></head>
 <body>
 <div class="hdr">
@@ -808,20 +819,26 @@ function tankMult(r){
   return (v > 0 && v < 100) ? v : 1;
 }
 
-// Amount of PRODUCT (granular or concentrate) applied -> "Total Used".
-function calcTotal(rate, sqFt) {
-  if (!sqFt || !rate) return '';
+// Amount of PRODUCT applied over this area, as numbers, so the caller can
+// both format it and check an entered amount against the top of the range.
+function calcRange(rate, sqFt) {
+  if (!sqFt || !rate) return null;
   var r = rate.toLowerCase();
-  if (skipRate(r)) return '';
+  if (skipRate(r)) return null;
   var sqK = parseFloat(sqFt) / 1000;
   // 1. A stated product-per-1000 rate wins - it is rig-independent.
   var pk = prodPerK(r);
-  if (pk) return fmtAmt(pk.lo*sqK, pk.hi*sqK, pk.unit);
+  if (pk) return {lo:pk.lo*sqK, hi:pk.hi*sqK, unit:pk.unit};
   // 2. Otherwise derive it: per-gallon rate x tank multiplier x gallons put out.
   var pg = prodPerGal(r), gk = galPerK(r), x = tankMult(r);
-  if (pg && gk) return fmtAmt(pg.lo*x*gk.lo*sqK, pg.hi*x*gk.hi*sqK, pg.unit);
+  if (pg && gk) return {lo:pg.lo*x*gk.lo*sqK, hi:pg.hi*x*gk.hi*sqK, unit:pg.unit};
   // 3. A bare gal/1000 is water, not product - calcMixed reports it instead.
-  return '';
+  return null;
+}
+// Amount of PRODUCT (granular or concentrate) applied -> "Total Used".
+function calcTotal(rate, sqFt) {
+  var g = calcRange(rate, sqFt);
+  return g ? fmtAmt(g.lo, g.hi, g.unit) : '';
 }
 
 // A product is spot-applied if its own method says so - never because of
@@ -840,6 +857,36 @@ function svcHasSpot(d){
 function areaForProduct(p, sqFt, spotSqFt){
   return (spotSqFt && isSpotProduct(p)) ? spotSqFt : sqFt;
 }
+// Amounts the applicator corrected by hand, keyed by product index.
+// Cleared whenever the job changes so a measured figure never carries over.
+var amtOverride = {};
+function clearAmtOverrides(){ amtOverride = {}; }
+function onAmtEdit(pi, el){
+  var v = String(el.value).trim();
+  if(v === '') delete amtOverride[pi]; else amtOverride[pi] = v;
+  updateTotalsPreview();
+}
+// The amount that goes on the record: what was entered, else what was figured.
+function amountFor(p, pi, area){
+  var calc = calcTotal(p.rate, area);
+  var ov = amtOverride[pi];
+  if(ov === undefined || ov === '') return {text: calc, measured: false};
+  var g = calcRange(p.rate, area);
+  var unit = g ? g.unit : '';
+  var n = parseFloat(ov);
+  if(isNaN(n)) return {text: calc, measured: false};
+  return {text: n.toFixed(2) + (unit ? ' ' + unit : '') + ' (measured)', measured: true};
+}
+// Over the top of the label range for this area?
+function amtOverLabel(p, pi, area){
+  var ov = amtOverride[pi];
+  if(ov === undefined || ov === '') return null;
+  var g = calcRange(p.rate, area);
+  if(!g) return null;
+  var n = parseFloat(ov);
+  if(isNaN(n)) return null;
+  return (n > g.hi + 1e-9) ? {entered:n, max:g.hi, unit:g.unit} : null;
+}
 function updateTotalsPreview() {
   var svc=document.getElementById('sSel').value;
   var box=document.getElementById('totPreview');
@@ -847,32 +894,53 @@ function updateTotalsPreview() {
   if(!box||!vals) return;
   if(!svc||!SV[svc]){box.style.display='none';return;}
   var sqFt='';
-  if(sprayMode==='spot'){
-    var sp=document.getElementById('spotSqIn');
-    sqFt=sp?sp.value.trim():'';
+  var cat=getSvcCat(svc);
+  if(cat==='onetime'){
+    var ot=document.getElementById('onetimeSqIn');
+    sqFt=ot?ot.value.trim():'';
   } else {
-    var cat=getSvcCat(svc);
     var sqIds={lawn:'sqLawn',phc:'sqPHC',pest:'sqPest',aquatic:'sqAquatic',bare:'sqLawn'};
     var el=document.getElementById(sqIds[cat]||'sqLawn');
     sqFt=el?el.value.trim():'';
+    var cn=document.getElementById('cSel');
+    if(!sqFt&&cn&&cn.value) sqFt=getCustSq(cn.value,cat)||'';
   }
   if(!sqFt){box.style.display='none';return;}
   var d=SV[svc];
   var spotSqFtPrev='';
   var spotElPrev=document.getElementById('spotSqIn');
   if(spotElPrev&&spotElPrev.style.display!=='none') spotSqFtPrev=spotElPrev.value.trim();
-  var lines=d.products.map(function(p,pi){
+  function esc(x){return String(x==null?'':x).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');}
+  var rows=[], any=false;
+  d.products.forEach(function(p,pi){
     var useSq=areaForProduct(p,sqFt,spotSqFtPrev);
-    var t=calcTotal(p.rate,useSq);
+    var g=calcRange(p.rate,useSq);
     var mx=calcMixed(p.rate,useSq);
-    var parts=[t,mx].filter(Boolean);
-    if(!parts.length) return '';
-    var label=d.products.length>1?p.product+': ':'';
+    if(!g&&!mx) return;
+    any=true;
     var note=(spotSqFtPrev&&isSpotProduct(p))?' (spot)':'';
-    return label+parts.join(' in ')+note;
-  }).filter(Boolean);
-  if(lines.length){
-    vals.textContent=lines.join(' | ');
+    var nm=(d.products.length>1?p.product:'Total used')+note;
+    if(g){
+      var ov=amtOverride[pi];
+      var shown=(ov!==undefined&&ov!=='')?ov:((Math.abs(g.hi-g.lo)>1e-9?(g.lo+g.hi)/2:g.lo).toFixed(2));
+      var over=amtOverLabel(p,pi,useSq);
+      var measured=(ov!==undefined&&ov!=='');
+      rows.push('<div class="tp-row">'
+        +'<span class="tp-nm" title="'+esc(p.product)+'">'+esc(nm)+'</span>'
+        +'<input class="tp-amt'+(over?' over':'')+'" type="text" inputmode="decimal" '
+          +'value="'+esc(shown)+'" data-pi="'+pi+'" '
+          +'oninput="onAmtEdit('+pi+',this)">'
+        +'<span class="tp-unit">'+esc(g.unit)+'</span>'
+        +'<span class="tp-tag'+(measured?' meas':'')+'">'+(measured?'measured':'calculated')+'</span>'
+        +'</div>');
+      if(over) rows.push('<div class="tp-warn">Over label: '+over.entered.toFixed(2)+' '
+        +esc(over.unit)+' entered, label allows up to '+over.max.toFixed(2)+' '+esc(over.unit)
+        +' on '+esc(useSq)+' sq ft.</div>');
+    }
+    if(mx) rows.push('<div class="tp-mix">'+(d.products.length>1?esc(p.product)+' - ':'')+esc(mx)+'</div>');
+  });
+  if(any){
+    vals.innerHTML=rows.join('');
     box.style.display='block';
   } else {
     box.style.display='none';
@@ -1128,6 +1196,7 @@ function showCustAddr(){
   }
 }
 function onCust(){
+  clearAmtOverrides();
   var name=document.getElementById('cSel').value;
   var svc=document.getElementById('sSel').value;
   showCustAddr();
@@ -1225,7 +1294,7 @@ function onSqCatType(cat){
   }
   updateTotalsPreview();
 }
-function onSvc(){var s=document.getElementById('sSel').value;var card=document.getElementById('pcard'),grid=document.getElementById('pgrd'),note=document.getElementById('multiNote');if(!s||!SV[s]){card.classList.remove('show');return;}var d=SV[s];grid.innerHTML=[['Product',jn(d.products,'product')],['Active Ing',jn(d.products,'activeIng')],['EPA Reg #',jn(d.products,'epa')],['Rate',jn(d.products,'rate')],['Method',jn(d.products,'method')],['Target Pest',jn(d.products,'targetPest')],['App Site',d.appSite]].map(function(kv){return'<span class="pk">'+kv[0]+'</span><span class="pv">'+kv[1]+'</span>';}).join('');note.innerHTML=d.products.length>1?'<div class="multi-note">⚡ '+d.products.length+' products — combined into 1 log entry</div>':'';card.classList.add('show');populateSiteDropdown(d.appSite);
+function onSvc(){clearAmtOverrides();var s=document.getElementById('sSel').value;var card=document.getElementById('pcard'),grid=document.getElementById('pgrd'),note=document.getElementById('multiNote');if(!s||!SV[s]){card.classList.remove('show');return;}var d=SV[s];grid.innerHTML=[['Product',jn(d.products,'product')],['Active Ing',jn(d.products,'activeIng')],['EPA Reg #',jn(d.products,'epa')],['Rate',jn(d.products,'rate')],['Method',jn(d.products,'method')],['Target Pest',jn(d.products,'targetPest')],['App Site',d.appSite]].map(function(kv){return'<span class="pk">'+kv[0]+'</span><span class="pv">'+kv[1]+'</span>';}).join('');note.innerHTML=d.products.length>1?'<div class="multi-note">⚡ '+d.products.length+' products — combined into 1 log entry</div>':'';card.classList.add('show');populateSiteDropdown(d.appSite);
   var custName=document.getElementById('cSel').value;
   var cat=getSvcCat(s);
   // Always reset ALL sq ft fields first, then show only the right one
@@ -1299,9 +1368,14 @@ function addEntry(){var cust=document.getElementById('cSel').value;var svc=docum
   });
   // Keep one slot per product so the totals report pairs each amount with the
   // right product name - a filtered-out blank used to shift every later index.
-  var totals=d.products.map(function(p,pi){return calcTotal(p.rate,svcSq[pi]);});
+  var totals=d.products.map(function(p,pi){return amountFor(p,pi,svcSq[pi]).text;});
+  // The preview flags an over-label amount, but say it again on save so it
+  // cannot be missed. Never block - a record has to be able to state what
+  // actually went out, even when that was too much.
+  var overs=d.products.map(function(p,pi){return amtOverLabel(p,pi,svcSq[pi]);}).filter(Boolean);
+  if(overs.length) toast('⚠ Logged OVER label rate — check the amount');
   var tu=totals.some(Boolean)?totals.map(function(t){return t||'—';}).join(' + '):'';
-  var mixed=d.products.map(function(p,pi){return calcMixed(p.rate,svcSq[pi]);}).filter(Boolean);var entry={id:Date.now(),customer:cust,service:svc,date:document.getElementById('aDate').textContent,time:document.getElementById('aTime').textContent,sqFt:sqFt,spotSqFt:spotSqFt,totalUsed:tu,weather:document.getElementById('wxC').value,temp:wxTemp?(wxTemp+'°F'):'',wind:document.getElementById('wxW').value,product:combined.product,activeIng:combined.activeIng,epa:combined.epa,rate:combined.rate,totalMixed:(mixed.length?mixed.join(' + '):combined.totalMixed),method:combined.method,targetPest:combined.targetPest,appSite:appSite,siteAddress:siteAddressFor(cust),notes:userN?d.notes+' | '+userN:d.notes,synced:false};queue.push(entry);saveQ();renderLog();syncEntry(entry);toast('✓ Added to log');document.getElementById('cSel').value='';document.getElementById('sSel').value='';['sqLawn','sqPHC','sqPest','sqAquatic'].forEach(function(id){
+  var mixed=d.products.map(function(p,pi){return calcMixed(p.rate,svcSq[pi]);}).filter(Boolean);var entry={id:Date.now(),customer:cust,service:svc,date:document.getElementById('aDate').textContent,time:document.getElementById('aTime').textContent,sqFt:sqFt,spotSqFt:spotSqFt,totalUsed:tu,weather:document.getElementById('wxC').value,temp:wxTemp?(wxTemp+'°F'):'',wind:document.getElementById('wxW').value,product:combined.product,activeIng:combined.activeIng,epa:combined.epa,rate:combined.rate,totalMixed:(mixed.length?mixed.join(' + '):combined.totalMixed),method:combined.method,targetPest:combined.targetPest,appSite:appSite,siteAddress:siteAddressFor(cust),notes:userN?d.notes+' | '+userN:d.notes,synced:false};queue.push(entry);saveQ();renderLog();syncEntry(entry);clearAmtOverrides();toast('✓ Added to log');document.getElementById('cSel').value='';document.getElementById('sSel').value='';['sqLawn','sqPHC','sqPest','sqAquatic'].forEach(function(id){
     var el=document.getElementById(id);
     if(el){el.value='';el.style.cssText='';}
   });

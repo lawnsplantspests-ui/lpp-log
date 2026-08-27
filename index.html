@@ -212,7 +212,7 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans)}
     <input type="number" id="sqIn" placeholder="Not on file — enter to save" min="0" step="100" oninput="onSqType()">
   </div>
   <!-- Spot spray toggle -->
-  <div style="display:flex;gap:8px;margin-bottom:7px" id="sprayToggle" style="display:none">
+  <div style="display:none;gap:8px;margin-bottom:7px" id="sprayToggle">
     <button type="button" id="btnFullLawn" onclick="setSprayMode('full')"
       style="flex:1;padding:9px;border-radius:8px;font-size:12px;font-weight:600;font-family:var(--mono);cursor:pointer;border:2px solid var(--gdim);background:var(--gdim);color:#fff">
       Full Lawn
@@ -222,6 +222,9 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans)}
       Spot Spray
     </button>
   </div>
+  <!-- Blanket 2,4-D already on the book for this site this year -->
+  <div id="capNote" style="display:none;font-size:11px;font-family:var(--mono);line-height:1.5;
+       padding:7px 9px;border-radius:8px;border:1px solid var(--bdr);margin-bottom:7px"></div>
   <!-- Spot spray sq ft field (only shown when spot spray active) -->
   <div class="fld" id="spotSqFld" style="display:none">
     <label>SPOT SPRAY SQ FT <small>— herbicide/pesticide area only (product 2+)</small></label>
@@ -573,8 +576,18 @@ function fillProdFromLib(sel){fillEditLib(sel);}
 
 
 
-// Cache of which tabs have been loaded from Sheets
-var loadedTabs = {};
+// Cache of which tabs have been loaded from Sheets. Persisted, so the season
+// history behind the blanket counter is pulled once per device rather than on
+// every boot - but never for the current month, which is still being written.
+var loadedTabs = (function(){
+  var t = {};
+  try { t = JSON.parse(localStorage.getItem('pda_loaded_tabs') || '{}') || {}; } catch(e){ t = {}; }
+  delete t[getTabName(new Date())];
+  return t;
+})();
+function saveLoadedTabs(){
+  try { localStorage.setItem('pda_loaded_tabs', JSON.stringify(loadedTabs)); } catch(e){}
+}
 var availableTabs = []; // list of tab names from Sheets
 
 function restoreArchiveFromSheets(){
@@ -606,25 +619,91 @@ function restoreArchiveFromSheets(){
       setSUI('ok','synced ✓');
       renderArchive();
       renderTotals();
+      loadSeasonForCounts();
     },
     function(){
       setSUI('err','offline');
+      seasonState = 'offline';
       renderArchive();
       renderTotals();
+      updateCapNote();
     }
   );
 }
 
+// ── BLANKET 2,4-D COUNT PER SITE ──────────────────────────────────
+// The 3-way label caps broadcast applications per site per year, and Strike 3
+// and Quali-Pro 3-D are the same formulation, so a brand switch does not reset
+// the count. The count has to come off the book rather than memory, so pull
+// this season's month tabs in the background and read them back per customer.
+var CAP_PER_YEAR = 2;
+var seasonState = 'idle'; // idle | loading | done | partial | offline
+
+function seasonTabs(){
+  var yr = String(new Date().getFullYear());
+  return availableTabs.filter(function(t){ return t.indexOf('_' + yr) > 0; });
+}
+function loadSeasonForCounts(){
+  var want = seasonTabs().filter(function(t){ return !loadedTabs[t]; });
+  if(!want.length){ seasonState = 'done'; updateCapNote(); return; }
+  seasonState = 'loading';
+  updateCapNote();
+  (function next(){
+    if(!want.length){
+      var missing = seasonTabs().filter(function(t){ return !loadedTabs[t]; });
+      seasonState = missing.length ? 'partial' : 'done';
+      updateCapNote();
+      return;
+    }
+    loadTabFromSheets(want.shift(), next, true);
+  })();
+}
+// A record is a 2,4-D record if the joined active-ingredient text names it -
+// the product names change, the active ingredient does not.
+function has24D(activeIng, product){
+  return /2,\s*4-D/i.test(String(activeIng || '')) ||
+         /strike\s*3|3-D Herbicide/i.test(String(product || ''));
+}
+// Blanket, not spot: a spot pass carries the tag somewhere in its joined method.
+function isBlanket24D(e){
+  if(!e || !has24D(e.activeIng, e.product)) return false;
+  return !/SPOT SPRAY ONLY/i.test(String(e.method || ''));
+}
+// Does the round about to be logged put 2,4-D down at all?
+function svcHas24D(d){
+  return !!(d && d.products && d.products.some(function(p){
+    return has24D(p.activeIng, p.product);
+  }));
+}
+// Blanket 2,4-D passes already on the book for this site this calendar year,
+// including anything still sitting in today's queue.
+function blanket24DCount(cust){
+  if(!cust) return 0;
+  var yr = String(new Date().getFullYear()), n = 0;
+  (archive || []).forEach(function(day){
+    if(String(day.date || '').slice(-4) !== yr) return;
+    (day.entries || []).forEach(function(e){
+      if(e.customer === cust && isBlanket24D(e)) n++;
+    });
+  });
+  (queue || []).forEach(function(e){
+    if(String(e.date || '').slice(-4) !== yr) return;
+    if(e.customer === cust && isBlanket24D(e)) n++;
+  });
+  return n;
+}
+
 // Fetch a specific month tab from Sheets and merge into archive
-function loadTabFromSheets(tab, callback){
+function loadTabFromSheets(tab, callback, quiet){
   if(loadedTabs[tab]){
     if(callback) callback();
     return;
   }
-  setSUI('go','loading '+tab+'…');
+  if(!quiet) setSUI('go','loading '+tab+'…');
   api({action:'getLog', tab:tab},
     function(r){
       loadedTabs[tab] = true;
+      saveLoadedTabs();
       var count = 0;
       if(r.entries && r.entries.length){
         // First group all entries by date
@@ -660,13 +739,14 @@ function loadTabFromSheets(tab, callback){
 
         if(count > 0) saveA();
       }
-      setSUI('ok','synced ✓');
-      toast('✓ Loaded '+count+' entries from '+tab);
+      if(!quiet){ setSUI('ok','synced ✓'); toast('✓ Loaded '+count+' entries from '+tab); }
       if(callback) callback();
     },
     function(err){
-      setSUI('err','failed');
-      toast('⚠ Could not load '+tab+': '+(err||'check connection'));
+      if(!quiet){
+        setSUI('err','failed');
+        toast('⚠ Could not load '+tab+': '+(err||'check connection'));
+      }
       if(callback) callback();
     }
   );
@@ -1103,6 +1183,50 @@ function setSprayMode(mode){
   }
   updateTotalsPreview();
 }
+// Show what the book already says about this site before the blanket-or-spot
+// button is pressed. Never blocks - a record has to be able to state what
+// actually went out - but it should not be a decision made blind.
+function updateCapNote(){
+  var box = document.getElementById('capNote');
+  if(!box) return;
+  var cust = (document.getElementById('cSel')||{}).value || '';
+  var svc  = (document.getElementById('sSel')||{}).value || '';
+  var d    = svc ? SV[svc] : null;
+  if(!cust || !svcHas24D(d)){ box.style.display = 'none'; return; }
+
+  if(seasonState === 'loading'){
+    box.style.display = 'block';
+    box.style.color = 'var(--dim)';
+    box.style.borderColor = 'var(--bdr)';
+    box.style.background = 'var(--sur)';
+    box.textContent = 'Checking the book for earlier blanket 2,4-D…';
+    return;
+  }
+
+  var n = blanket24DCount(cust);
+  var caveat = seasonState === 'offline' ? ' (from the cached log — offline)'
+             : seasonState === 'partial' ? ' (some months could not be read)'
+             : '';
+  var msg, col, bg;
+  if(n >= CAP_PER_YEAR + 1){
+    col = 'var(--red)';  bg = 'rgba(248,81,73,0.1)';
+    msg = n + ' blanket 2,4-D on the book this year — over the ' + CAP_PER_YEAR + ' per site label cap. Spot this one.';
+  } else if(n >= CAP_PER_YEAR){
+    col = 'var(--wrn)';  bg = 'var(--wglo)';
+    msg = n + ' of ' + CAP_PER_YEAR + ' blanket 2,4-D used this year — at the label cap. Spot this one.';
+  } else if(n > 0){
+    col = 'var(--dim)';  bg = 'var(--sur)';
+    msg = n + ' of ' + CAP_PER_YEAR + ' blanket 2,4-D used this year.';
+  } else {
+    col = 'var(--grn)';  bg = 'var(--gglo)';
+    msg = 'No blanket 2,4-D on the book for this site this year.';
+  }
+  box.style.display = 'block';
+  box.style.color = col;
+  box.style.background = bg;
+  box.style.borderColor = col;
+  box.textContent = msg + caveat;
+}
 // Does this service actually put a liquid down? Only then is blanket-vs-spot
 // a real question that has to be answered before the entry can be written.
 function svcNeedsSprayChoice(d){
@@ -1375,6 +1499,7 @@ function onCust(){
   } else {
     hideSqFlds();
   }
+  updateCapNote();
   updateTotalsPreview();
 }
 function hideSqFlds(){
@@ -1496,6 +1621,7 @@ function onSvc(){clearAmtOverrides();clearProdSwap();var s=document.getElementBy
     sprayMode='full';
   }
   showSqForCat(custName, cat);
+  updateCapNote();
   updateTotalsPreview();}
 function addEntry(){var cust=document.getElementById('cSel').value;var svc=document.getElementById('sSel').value;if(!cust){toast('⚠ Select a customer');return;}if(!svc){toast('⚠ Select a service');return;}clock();var d=SV[svc];var svcCat=getSvcCat(svc);
 
@@ -1560,6 +1686,11 @@ function addEntry(){var cust=document.getElementById('cSel').value;var svc=docum
   // actually went out, even when that was too much.
   var overs=eff.map(function(p,pi){return amtOverLabel(p,pi,svcSq[pi]);}).filter(Boolean);
   if(overs.length) toast('⚠ Logged OVER label rate — check the amount');
+  // Same rule for the broadcast cap: say it, never block. The book has to be
+  // able to record a blanket pass that was actually made.
+  if(sprayMode==='full' && svcHas24D(d) && blanket24DCount(cust) >= CAP_PER_YEAR){
+    toast('⚠ Over the '+CAP_PER_YEAR+'-per-year blanket 2,4-D cap for this site');
+  }
   var tu=totals.some(Boolean)?totals.map(function(t){return t||'—';}).join(' + '):'';
   var mixed=eff.map(function(p,pi){return calcMixed(p.rate,svcSq[pi]);}).filter(Boolean);var entry={id:Date.now(),customer:cust,service:svc,date:document.getElementById('aDate').textContent,time:document.getElementById('aTime').textContent,sqFt:sqFt,spotSqFt:spotSqFt,totalUsed:tu,weather:document.getElementById('wxC').value,temp:wxTemp?(wxTemp+'°F'):'',wind:document.getElementById('wxW').value,product:combined.product,activeIng:combined.activeIng,epa:combined.epa,rate:combined.rate,totalMixed:(mixed.length?mixed.join(' + '):combined.totalMixed),method:combined.method,targetPest:combined.targetPest,appSite:appSite,siteAddress:(enteredSiteAddress()||siteAddressFor(cust)),notes:userN?d.notes+' | '+userN:d.notes,synced:false};queue.push(entry);saveQ();renderLog();syncEntry(entry);clearAmtOverrides();clearProdSwap();clearSiteAddr();toast('✓ Added to log');document.getElementById('cSel').value='';document.getElementById('sSel').value='';['sqLawn','sqPHC','sqPest','sqAquatic'].forEach(function(id){
     var el=document.getElementById(id);
@@ -1576,7 +1707,7 @@ function addEntry(){var cust=document.getElementById('cSel').value;var svc=docum
   var bf=document.getElementById('btnFullLawn');
   var bs=document.getElementById('btnSpotSpray');
   if(bf){bf.style.background='var(--gdim)';bf.style.color='#fff';bf.style.borderColor='var(--gdim)';}
-  if(bs){bs.style.background='var(--sur)';bs.style.color='var(--dim)';bs.style.borderColor='var(--bdr)';}document.getElementById('nts').value='';document.getElementById('pcard').classList.remove('show');document.getElementById('sqFld').className='fld';document.getElementById('sqLbl').textContent='LAWN SQ FT';document.getElementById('sqIn').style.cssText='';document.getElementById('totPreview').style.display='none';goTab('log');}
+  if(bs){bs.style.background='var(--sur)';bs.style.color='var(--dim)';bs.style.borderColor='var(--bdr)';}document.getElementById('nts').value='';document.getElementById('pcard').classList.remove('show');document.getElementById('sqFld').className='fld';document.getElementById('sqLbl').textContent='LAWN SQ FT';document.getElementById('sqIn').style.cssText='';document.getElementById('totPreview').style.display='none';updateCapNote();goTab('log');}
 function eRow(e){return[e.date,e.time,e.customer,e.sqFt,e.service,e.product,e.activeIng,e.epa,e.targetPest,e.appSite,e.method,e.rate,e.totalMixed,e.sqFt,e.totalUsed,e.spotSqFt||'',e.weather,e.wind,e.temp,e.notes,'Devon Alleman','608542 / BU 14521',e.siteAddress||''];}
 function getTabName(date){
   var d = date || new Date();

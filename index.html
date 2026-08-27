@@ -822,6 +822,22 @@ function calcTotal(rate, sqFt) {
   return '';
 }
 
+// A product is spot-applied if its own method says so - never because of
+// where it happens to sit in the product list. Read off the method field
+// because the service editor rebuilds products from a fixed set of keys and
+// would drop a dedicated flag.
+function isSpotProduct(p){
+  return /spot\s*spray\s*only/i.test((p && p.method) || '');
+}
+// Does this service have anything that should be measured as a spot area?
+function svcHasSpot(d){
+  return !!(d && d.products && d.products.some(isSpotProduct));
+}
+// Area to charge a product against: the spot area only if that product is
+// spot-applied AND a spot area was actually entered.
+function areaForProduct(p, sqFt, spotSqFt){
+  return (spotSqFt && isSpotProduct(p)) ? spotSqFt : sqFt;
+}
 function updateTotalsPreview() {
   var svc=document.getElementById('sSel').value;
   var box=document.getElementById('totPreview');
@@ -844,13 +860,13 @@ function updateTotalsPreview() {
   var spotElPrev=document.getElementById('spotSqIn');
   if(spotElPrev&&spotElPrev.style.display!=='none') spotSqFtPrev=spotElPrev.value.trim();
   var lines=d.products.map(function(p,pi){
-    var useSq=(pi===0||!spotSqFtPrev)?sqFt:spotSqFtPrev;
+    var useSq=areaForProduct(p,sqFt,spotSqFtPrev);
     var t=calcTotal(p.rate,useSq);
     var mx=calcMixed(p.rate,useSq);
     var parts=[t,mx].filter(Boolean);
     if(!parts.length) return '';
     var label=d.products.length>1?p.product+': ':'';
-    var note=(pi>0&&spotSqFtPrev)?' (spot)':'';
+    var note=(spotSqFtPrev&&isSpotProduct(p))?' (spot)':'';
     return label+parts.join(' in ')+note;
   }).filter(Boolean);
   if(lines.length){
@@ -1143,8 +1159,13 @@ function onSvc(){var s=document.getElementById('sSel').value;var card=document.g
     var el=document.getElementById(id);
     if(el){el.value='';el.style.cssText='';}
   });
-  var sprayable = (cat === 'lawn');
+  var svcDef = SV[document.getElementById('sSel').value];
+  var hasSpot = svcHasSpot(svcDef);
+  var sprayable = (cat === 'lawn') || hasSpot;
   showSprayToggle(sprayable);
+  // A service built around spot treatment needs its own area, so open the
+  // field rather than quietly charging the product against the whole lawn.
+  if(hasSpot) setSprayMode('spot');
   if(!sprayable){
     var sf=document.getElementById('spotSqFld');
     if(sf) sf.style.display='none';
@@ -1193,9 +1214,8 @@ function addEntry(){var cust=document.getElementById('cSel').value;var svc=docum
   var spotSqFt='';
   var spotEl=document.getElementById('spotSqIn');
   if(spotEl&&spotEl.style.display!=='none') spotSqFt=spotEl.value.trim();
-  var calcSqFt=sqFt;var sv=document.getElementById('siteOv').value;var appSite=(sv&&sv!=='Use service default')?sv:d.appSite;var userN=document.getElementById('nts').value.trim();var wxTemp=document.getElementById('wxT').value;var combined={product:jn(d.products,'product'),activeIng:jn(d.products,'activeIng'),epa:jn(d.products,'epa'),rate:jn(d.products,'rate'),totalMixed:jn(d.products,'totalMixed'),method:jn(d.products,'method'),targetPest:jn(d.products,'targetPest')};var svcSq=d.products.map(function(p,pi){
-    // Product 1 always uses full sq ft; product 2+ uses spot sq ft if entered
-    return (pi===0||!spotSqFt)?sqFt:spotSqFt;
+  var calcSqFt=sqFt;var sv=document.getElementById('siteOv').value;var appSite=(sv&&sv!=='Use service default')?sv:d.appSite;var userN=document.getElementById('nts').value.trim();var wxTemp=document.getElementById('wxT').value;var combined={product:jn(d.products,'product'),activeIng:jn(d.products,'activeIng'),epa:jn(d.products,'epa'),rate:jn(d.products,'rate'),totalMixed:jn(d.products,'totalMixed'),method:jn(d.products,'method'),targetPest:jn(d.products,'targetPest')};var svcSq=d.products.map(function(p){
+    return areaForProduct(p,sqFt,spotSqFt);
   });
   // Keep one slot per product so the totals report pairs each amount with the
   // right product name - a filtered-out blank used to shift every later index.

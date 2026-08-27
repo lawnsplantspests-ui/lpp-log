@@ -422,7 +422,8 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans)}
 </div>
 <div class="toast" id="toast"></div>
 <script>
-var SYNC_URL='https://script.google.com/macros/s/AKfycbyw4TPS0dpkTvWtUvGvo6PeYihxWyy64UdykKhV4nXshpn5YNiiL8vGd31gShSwzIJ3/exec';
+// SYNC_URL removed: it answered {"status":"ok"} to any request and was
+// called with mode:'no-cors', so it could not report a real failure.
 var API_URL='https://script.google.com/macros/s/AKfycbxl5cWjUIxRvfbw3YBi9rKk_Q5bljH94ZvW3KqTxfNor8QCOb7w_QrjUMJpND8Bz4zA/exec';
 var SHEET_ID='1ZLuqBz61IXa5CEQieNQbhTLxH6EJYGmxJiXjeyaswa0';
 var HEADERS=['Date','Time','Customer','Sq Ft','Service','Product','Active Ingredient','EPA Reg #','Target Pest','App Site','Method','Rate','Total Mixed','Area Treated','Total Used','Spot Spray Sq Ft','Weather','Wind','Temp','Notes','Applicator','Cert #','Site Address'];
@@ -538,6 +539,7 @@ function loadAll() {
       // Always restore from Sheets to get latest entries
       // (merges new entries, skips duplicates)
       loadAddresses();
+      retryPending(true);
       restoreArchiveFromSheets();
       setSUI('ok','synced ✓');
       var bar = document.getElementById('offlineBar');
@@ -736,17 +738,42 @@ function syncEntry(entry){
     if(i>=0){queue[i].synced=true;saveQ();renderLog();}
     setSUI('ok','synced ✓');
   },
-  function(){
-    // Fallback to old no-cors GET on failure
-    var params='?sheetId='+encodeURIComponent(SHEET_ID)+'&tab='+encodeURIComponent(getTab())+'&action=append&row='+encodeURIComponent(JSON.stringify(eRow(entry)))+'&headers='+encodeURIComponent(JSON.stringify(HEADERS));
-    fetch(SYNC_URL+params,{method:'GET',mode:'no-cors'})
-    .then(function(){
-      var i=queue.findIndex(function(e){return e.id===entry.id;});
-      if(i>=0){queue[i].synced=true;saveQ();renderLog();}
-      setSUI('ok','synced ✓');
-    }).catch(function(){ setSUI('err','sync failed'); });
+  function(err){
+    // No fallback. The old one used mode:'no-cors', whose response cannot be
+    // read, so it marked the entry synced whether or not anything was written.
+    // A pending entry is honest; a false tick is not.
+    console.warn('sync failed for entry '+entry.id+':', err);
+    var i=queue.findIndex(function(e){return e.id===entry.id;});
+    if(i>=0){ queue[i].synced=false; saveQ(); renderLog(); }
+    setSUI('err','not synced — will retry');
+    toast('⚠ Not synced — saved on this device, will retry');
   });
 }
+
+// Re-send anything still pending. Safe to call repeatedly: entries are only
+// marked synced when the API confirms the write.
+function retryPending(silent){
+  var pending=queue.filter(function(e){return !e.synced;});
+  if(!pending.length){ if(!silent) toast('Nothing pending'); return; }
+  if(!silent) setSUI('go','retrying '+pending.length+'…');
+  var done=0, ok=0;
+  pending.forEach(function(entry){
+    api({action:'appendLog', tab:getTab(), row:eRow(entry), headers:HEADERS},
+      function(){
+        var i=queue.findIndex(function(e){return e.id===entry.id;});
+        if(i>=0){ queue[i].synced=true; saveQ(); renderLog(); }
+        ok++; done++; finish();
+      },
+      function(){ done++; finish(); });
+  });
+  function finish(){
+    if(done<pending.length) return;
+    if(ok===pending.length) setSUI('ok','synced ✓');
+    else setSUI('err',(pending.length-ok)+' still pending');
+    if(!silent) toast(ok+' of '+pending.length+' synced');
+  }
+}
+window.addEventListener('online', function(){ retryPending(true); });
 
 function jn(arr,f){ return arr.map(function(p){return p[f]||'';}).join(' + '); }
 

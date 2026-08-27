@@ -1156,8 +1156,16 @@ try{
   if(ac){ addrById=ac.byId||{}; addrByName=ac.byName||{}; }
 }catch(e){}
 
+// The Customers tab has a bug that writes an ISO timestamp into the Address
+// column, so an address-shaped check is not enough - a timestamp must count as
+// "no address on file" rather than be printed on a record as the site.
+function isTimestamp(v){
+  return /^\s*\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(String(v||''));
+}
 function fmtAddr(c){
-  var line=[c.Address||c.address||''].filter(Boolean);
+  var raw=c.Address||c.address||'';
+  if(isTimestamp(raw)) return '';
+  var line=[raw].filter(Boolean);
   var tail=[(c.City||c.city||''),(c.State||c.state||''),(c.Zip||c.zip||'')]
     .map(function(x){return String(x||'').trim();}).filter(Boolean);
   var t=tail.length?(tail[0]+(tail.length>1?', '+tail.slice(1).join(' '):'')):'';

@@ -902,24 +902,60 @@ function onProdSwap(pi, el){
 // The line as it will be recorded: the swapped-in product if one was chosen,
 // otherwise the service's own. Spot vs full lawn always comes from the
 // service, since that is how the round is run, not a property of the jug.
+// The spot area, read off the field's wrapper. The input itself carries no
+// display of its own - checking that was why a spot area stopped being picked
+// up after the first entry of the day.
+function currentSpotSqFt(){
+  var fld = document.getElementById('spotSqFld');
+  var el  = document.getElementById('spotSqIn');
+  if(!fld || !el || fld.style.display === 'none') return '';
+  return el.value.trim();
+}
+var SPOT_TAG = 'SPOT SPRAY ONLY - treat individual weeds, not the full lawn | ';
+function stripSpotTag(m){
+  return String(m||'').replace(/SPOT SPRAY ONLY[^|]*\|?\s*/i,'').trim();
+}
+// Granular goes down over the whole lawn however the weeds are treated, and a
+// dust goes in a void, so neither follows the choice made at the truck. Read
+// it off the rate, not the method - Rd 7's herbicide carries the spreader
+// method text and would be misread as granular.
+function followsSprayMode(p){
+  return !/granular|per void|\blbs\b/i.test(String((p && p.rate) || ''));
+}
+// The blanket-vs-spot call is made per visit, not per service: the round is
+// usually spot-treated and only blanketed when the weed pressure needs it.
+// Stamp the record with whichever was actually done.
+function applySprayMode(p){
+  if(!followsSprayMode(p)) return p;
+  var out = {};
+  for(var k in p){ if(Object.prototype.hasOwnProperty.call(p,k)) out[k] = p[k]; }
+  var m = stripSpotTag(p.method);
+  if(sprayMode === 'spot'){
+    // Rd 6's method text says the pass is blanketed. Left in place a spot
+    // record would contradict itself, which is the one thing a record of an
+    // application must not do.
+    m = m.replace(/blanket spray over the full lawn/i, 'spot spray - individual weeds only');
+    m = SPOT_TAG + m;
+  }
+  out.method = m;
+  return out;
+}
 function effProduct(orig, pi){
   var name = prodSwap[pi];
-  if(!name) return orig;
+  if(!name) return applySprayMode(orig);
   var lib = (typeof productLib!=='undefined' && productLib) ? productLib : [];
   var alt = null;
   for(var i=0;i<lib.length;i++){ if(lib[i].product===name){ alt=lib[i]; break; } }
-  if(!alt) return orig;
-  var spot = isSpotProduct(orig);
-  var m = String(alt.method||'').replace(/SPOT SPRAY ONLY[^|]*\|?\s*/i,'').trim();
-  return {
+  if(!alt) return applySprayMode(orig);
+  return applySprayMode({
     product:    alt.product,
     activeIng:  alt.activeIng || '',
     epa:        alt.epa || '',
     rate:       alt.rate || '',
     totalMixed: orig.totalMixed || 'Record gal applied',
     targetPest: alt.targetPest || orig.targetPest || '',
-    method:     (spot ? 'SPOT SPRAY ONLY - treat individual weeds, not the full lawn | ' : '') + m
-  };
+    method:     stripSpotTag(alt.method)
+  });
 }
 function swapOptions(pi, current){
   var lib = (typeof productLib!=='undefined' && productLib) ? productLib.slice() : [];
@@ -984,9 +1020,7 @@ function updateTotalsPreview() {
   }
   if(!sqFt){box.style.display='none';return;}
   var d=SV[svc];
-  var spotSqFtPrev='';
-  var spotElPrev=document.getElementById('spotSqIn');
-  if(spotElPrev&&spotElPrev.style.display!=='none') spotSqFtPrev=spotElPrev.value.trim();
+  var spotSqFtPrev=currentSpotSqFt();
   function esc(x){return String(x==null?'':x).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');}
   var rows=[], any=false;
   d.products.forEach(function(p0,pi){
@@ -1054,13 +1088,25 @@ function setSprayMode(mode){
     // Show BOTH — full sq ft for fertilizer, spot sq ft for herbicide
     spotFld.style.display='block';
     sqCatFlds.style.display='block';
-  } else {
+  } else if(mode === 'full'){
     btnFull.style.background='var(--gdim)';btnFull.style.color='#fff';btnFull.style.borderColor='var(--gdim)';
+    btnSpot.style.background='var(--sur)';btnSpot.style.color='var(--dim)';btnSpot.style.borderColor='var(--bdr)';
+    spotFld.style.display='none';
+    sqCatFlds.style.display='block';
+  } else {
+    // Nothing picked yet. Neither button reads as chosen, so a round that was
+    // spot-treated cannot go in the book as a blanket application by default.
+    btnFull.style.background='var(--sur)';btnFull.style.color='var(--dim)';btnFull.style.borderColor='var(--bdr)';
     btnSpot.style.background='var(--sur)';btnSpot.style.color='var(--dim)';btnSpot.style.borderColor='var(--bdr)';
     spotFld.style.display='none';
     sqCatFlds.style.display='block';
   }
   updateTotalsPreview();
+}
+// Does this service actually put a liquid down? Only then is blanket-vs-spot
+// a real question that has to be answered before the entry can be written.
+function svcNeedsSprayChoice(d){
+  return !!(d && d.products && d.products.some(followsSprayMode));
 }
 
 function showSprayToggle(show){
@@ -1436,7 +1482,12 @@ function onSvc(){clearAmtOverrides();clearProdSwap();var s=document.getElementBy
   showSprayToggle(sprayable);
   // A service built around spot treatment needs its own area, so open the
   // field rather than quietly charging the product against the whole lawn.
+  // Anything else that sprays starts with neither button picked - the round is
+  // usually spot-treated and only blanketed when it is needed, so the call has
+  // to be made at the truck instead of defaulting to full lawn.
   if(hasSpot) setSprayMode('spot');
+  else if(sprayable && svcNeedsSprayChoice(svcDef)) setSprayMode('');
+  else setSprayMode('full');
   if(!sprayable){
     var sf=document.getElementById('spotSqFld');
     if(sf) sf.style.display='none';
@@ -1481,11 +1532,23 @@ function addEntry(){var cust=document.getElementById('cSel').value;var svc=docum
     }
   }
 
-  // Spot spray sq ft for product 2+
-  var spotSqFt='';
-  var spotEl=document.getElementById('spotSqIn');
-  if(spotEl&&spotEl.style.display!=='none') spotSqFt=spotEl.value.trim();
-  var calcSqFt=sqFt;var sv=document.getElementById('siteOv').value;var appSite=(sv&&sv!=='Use service default')?sv:d.appSite;var userN=document.getElementById('nts').value.trim();var wxTemp=document.getElementById('wxT').value;var combined={product:jn(eff,'product'),activeIng:jn(eff,'activeIng'),epa:jn(eff,'epa'),rate:jn(eff,'rate'),totalMixed:jn(eff,'totalMixed'),method:jn(eff,'method'),targetPest:jn(eff,'targetPest')};var eff=d.products.map(function(p,pi){ return effProduct(p,pi); });
+  // Blanket or spot has to be on the record - 7 Pa. Code 128.35 wants the area
+  // actually treated, and the herbicide's label cap counts broadcast passes.
+  var toggleOn = (document.getElementById('sprayToggle')||{style:{}}).style.display !== 'none';
+  if(toggleOn && sprayMode !== 'spot' && sprayMode !== 'full'){
+    toast('⚠ Pick Full Lawn or Spot Spray');
+    return;
+  }
+  var spotSqFt=currentSpotSqFt();
+  if(sprayMode==='spot' && svcNeedsSprayChoice(d) && !spotSqFt){
+    var ssf=document.getElementById('spotSqFld');
+    if(ssf) ssf.style.display='block';
+    var ssi=document.getElementById('spotSqIn');
+    if(ssi){ssi.style.borderColor='var(--red)';ssi.focus();}
+    toast('⚠ Spot spray sq ft is required');
+    return;
+  }
+  var calcSqFt=sqFt;var sv=document.getElementById('siteOv').value;var appSite=(sv&&sv!=='Use service default')?sv:d.appSite;var userN=document.getElementById('nts').value.trim();var wxTemp=document.getElementById('wxT').value;var eff=d.products.map(function(p,pi){ return effProduct(p,pi); });var combined={product:jn(eff,'product'),activeIng:jn(eff,'activeIng'),epa:jn(eff,'epa'),rate:jn(eff,'rate'),totalMixed:jn(eff,'totalMixed'),method:jn(eff,'method'),targetPest:jn(eff,'targetPest')};
   var svcSq=eff.map(function(p){
     return areaForProduct(p,sqFt,spotSqFt);
   });
@@ -1505,7 +1568,7 @@ function addEntry(){var cust=document.getElementById('cSel').value;var svc=docum
   hideSqFlds();
   showSprayToggle(false);
   sprayMode='full';
-  var sp=document.getElementById('spotSqIn');if(sp){sp.value='';sp.style.display='none';}
+  var sp=document.getElementById('spotSqIn');if(sp){sp.value='';sp.style.borderColor='';}
   var ot=document.getElementById('onetimeSqIn');if(ot) ot.value='';
   var otf=document.getElementById('onetimeSqFld');if(otf) otf.style.display='none';
   document.getElementById('siteOv').value='';

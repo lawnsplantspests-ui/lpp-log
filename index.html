@@ -202,6 +202,7 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans)}
 <div class="pg on" id="pg-new"><div class="body">
   <div class="lbl">Customer</div>
   <div class="fld"><label>CUSTOMER NAME ★</label><select id="cSel" onchange="onCust()"></select></div>
+  <div class="fld" id="siteAddrFld" style="display:none"><label>SITE ADDRESS ★</label><input type="text" id="siteAddrIn" placeholder="street, city, state zip" oninput="onSiteAddrEdit()"></div>
   <div id="custAddr" style="display:none;font-size:11px;font-family:var(--mono);margin:-4px 0 8px 2px;line-height:1.6"></div>
   <div class="fld" id="sqFld" style="display:none"><label id="sqLbl">SQ FT</label>
     <input type="number" id="sqIn" placeholder="Not on file — enter to save" min="0" step="100" oninput="onSqType()">
@@ -1220,31 +1221,51 @@ function siteAddressFor(name){
 }
 // A missing address is a missing required field, so say so rather than
 // letting the entry look complete.
-function showCustAddr(){
+// Set once the applicator types over the pre-filled address, so re-rendering
+// never overwrites what was entered for this job.
+var siteAddrEdited = false;
+function onSiteAddrEdit(){ siteAddrEdited = true; showCustAddr(true); }
+function clearSiteAddr(){
+  siteAddrEdited = false;
+  var i=document.getElementById('siteAddrIn');
+  if(i) i.value='';
+}
+// What goes on the record: whatever is in the box.
+function enteredSiteAddress(){
+  var i=document.getElementById('siteAddrIn');
+  return i ? String(i.value||'').trim() : '';
+}
+function showCustAddr(keepTyped){
   var el=document.getElementById('custAddr');
-  if(!el) return;
+  var fld=document.getElementById('siteAddrFld');
+  var inp=document.getElementById('siteAddrIn');
+  if(!el||!fld||!inp) return;
   var name=document.getElementById('cSel').value;
-  if(!name){ el.style.display='none'; return; }
-  var a=custAddress(name), fb=nameSite(name);
+  if(!name){ el.style.display='none'; fld.style.display='none'; return; }
+  fld.style.display='block';
+  var onFile=siteAddressFor(name);
+  if(!keepTyped && !siteAddrEdited) inp.value=onFile;
   el.style.display='block';
-  function esc(x){ return String(x).replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
-  // A city/zip with no street number reads as complete at a glance; say so.
-  var streetless = a && !/\d/.test(String(a).split(',')[0]);
-  if(a && streetless){
-    el.innerHTML='<span style="color:#e0a030">Site address (STREET MISSING)</span> '+esc(a)
-      +'<br><span style="color:#e0a030">Add the street line to this customer in FieldPro.</span>';
-  } else if(a){
-    el.innerHTML='<span style="color:var(--mut)">Site address</span> '+esc(a);
-  } else if(fb){
-    el.innerHTML='<span style="color:#e0a030">Site (from customer name)</span> '+esc(fb)+
-      '<br><span style="color:#e0a030">No full address on file - add one in FieldPro.</span>';
+  var typed=String(inp.value||'').trim();
+  // Street-less means a city/zip with no number in the first part - it reads
+  // as a complete address at a glance and is not one.
+  var streetless = typed && !/\d/.test(typed.split(',')[0]);
+  if(!typed){
+    el.innerHTML='<span style="color:#e0a030">Required on the record. Nothing on file for '+
+      'this customer - type the property address above.</span>';
+  } else if(siteAddrEdited && typed!==onFile){
+    el.innerHTML='<span style="color:var(--grn)">Entered for this job</span>';
+  } else if(streetless){
+    el.innerHTML='<span style="color:#e0a030">STREET MISSING - add the street line, '+
+      'or fix this customer in FieldPro.</span>';
   } else {
-    el.innerHTML='<span style="color:#e0a030">No address on file - required on the '+
-      'record. Add it to this customer in FieldPro, then reload.</span>';
+    el.innerHTML='<span style="color:var(--mut)">From customer file. Type over it if the '+
+      'property treated is somewhere else.</span>';
   }
 }
 function onCust(){
   clearAmtOverrides();
+  clearSiteAddr();
   var name=document.getElementById('cSel').value;
   var svc=document.getElementById('sSel').value;
   showCustAddr();
@@ -1423,7 +1444,7 @@ function addEntry(){var cust=document.getElementById('cSel').value;var svc=docum
   var overs=d.products.map(function(p,pi){return amtOverLabel(p,pi,svcSq[pi]);}).filter(Boolean);
   if(overs.length) toast('⚠ Logged OVER label rate — check the amount');
   var tu=totals.some(Boolean)?totals.map(function(t){return t||'—';}).join(' + '):'';
-  var mixed=d.products.map(function(p,pi){return calcMixed(p.rate,svcSq[pi]);}).filter(Boolean);var entry={id:Date.now(),customer:cust,service:svc,date:document.getElementById('aDate').textContent,time:document.getElementById('aTime').textContent,sqFt:sqFt,spotSqFt:spotSqFt,totalUsed:tu,weather:document.getElementById('wxC').value,temp:wxTemp?(wxTemp+'°F'):'',wind:document.getElementById('wxW').value,product:combined.product,activeIng:combined.activeIng,epa:combined.epa,rate:combined.rate,totalMixed:(mixed.length?mixed.join(' + '):combined.totalMixed),method:combined.method,targetPest:combined.targetPest,appSite:appSite,siteAddress:siteAddressFor(cust),notes:userN?d.notes+' | '+userN:d.notes,synced:false};queue.push(entry);saveQ();renderLog();syncEntry(entry);clearAmtOverrides();toast('✓ Added to log');document.getElementById('cSel').value='';document.getElementById('sSel').value='';['sqLawn','sqPHC','sqPest','sqAquatic'].forEach(function(id){
+  var mixed=d.products.map(function(p,pi){return calcMixed(p.rate,svcSq[pi]);}).filter(Boolean);var entry={id:Date.now(),customer:cust,service:svc,date:document.getElementById('aDate').textContent,time:document.getElementById('aTime').textContent,sqFt:sqFt,spotSqFt:spotSqFt,totalUsed:tu,weather:document.getElementById('wxC').value,temp:wxTemp?(wxTemp+'°F'):'',wind:document.getElementById('wxW').value,product:combined.product,activeIng:combined.activeIng,epa:combined.epa,rate:combined.rate,totalMixed:(mixed.length?mixed.join(' + '):combined.totalMixed),method:combined.method,targetPest:combined.targetPest,appSite:appSite,siteAddress:(enteredSiteAddress()||siteAddressFor(cust)),notes:userN?d.notes+' | '+userN:d.notes,synced:false};queue.push(entry);saveQ();renderLog();syncEntry(entry);clearAmtOverrides();clearSiteAddr();toast('✓ Added to log');document.getElementById('cSel').value='';document.getElementById('sSel').value='';['sqLawn','sqPHC','sqPest','sqAquatic'].forEach(function(id){
     var el=document.getElementById(id);
     if(el){el.value='';el.style.cssText='';}
   });

@@ -178,6 +178,10 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans)}
 .tp-tag.meas{color:var(--grn);border-color:var(--gdim)}
 .tp-warn{font-size:10px;font-family:var(--mono);color:#e0a030;line-height:1.6;margin-top:4px}
 .tp-mix{font-size:10px;font-family:var(--mono);color:var(--mut);margin-top:4px}
+
+.tp-swap{flex:1 1 100%;margin:2px 0 0 0}
+.tp-swapsel{width:100%;background:var(--sur2);border:1px solid var(--bdr);border-radius:5px;color:var(--dim);font-family:var(--mono);font-size:10px;padding:3px 5px}
+.tp-swapsel.on{color:var(--grn);border-color:var(--gdim)}
 </style></head>
 <body>
 <div class="hdr">
@@ -885,6 +889,51 @@ function svcHasSpot(d){
 function areaForProduct(p, sqFt, spotSqFt){
   return (spotSqFt && isSpotProduct(p)) ? spotSqFt : sqFt;
 }
+// Product chosen at the truck in place of the one on the service, keyed by
+// product index. Entry-time only - the service definition is never touched.
+var prodSwap = {};
+function clearProdSwap(){ prodSwap = {}; }
+function onProdSwap(pi, el){
+  var v = el.value;
+  if(!v) delete prodSwap[pi]; else prodSwap[pi] = v;
+  delete amtOverride[pi];   // the old amount belonged to the old product
+  updateTotalsPreview();
+}
+// The line as it will be recorded: the swapped-in product if one was chosen,
+// otherwise the service's own. Spot vs full lawn always comes from the
+// service, since that is how the round is run, not a property of the jug.
+function effProduct(orig, pi){
+  var name = prodSwap[pi];
+  if(!name) return orig;
+  var lib = (typeof productLib!=='undefined' && productLib) ? productLib : [];
+  var alt = null;
+  for(var i=0;i<lib.length;i++){ if(lib[i].product===name){ alt=lib[i]; break; } }
+  if(!alt) return orig;
+  var spot = isSpotProduct(orig);
+  var m = String(alt.method||'').replace(/SPOT SPRAY ONLY[^|]*\|?\s*/i,'').trim();
+  return {
+    product:    alt.product,
+    activeIng:  alt.activeIng || '',
+    epa:        alt.epa || '',
+    rate:       alt.rate || '',
+    totalMixed: orig.totalMixed || 'Record gal applied',
+    targetPest: alt.targetPest || orig.targetPest || '',
+    method:     (spot ? 'SPOT SPRAY ONLY - treat individual weeds, not the full lawn | ' : '') + m
+  };
+}
+function swapOptions(pi, current){
+  var lib = (typeof productLib!=='undefined' && productLib) ? productLib.slice() : [];
+  lib.sort(function(a,b){ return String(a.product||'').toLowerCase()<String(b.product||'').toLowerCase()?-1:1; });
+  var sel = prodSwap[pi] || '';
+  var out = '<option value="">'+String(current).replace(/&/g,'&amp;').replace(/</g,'&lt;')+' (on this service)</option>';
+  for(var i=0;i<lib.length;i++){
+    var n = String(lib[i].product||'');
+    if(!n || n===current) continue;
+    out += '<option value="'+n.replace(/&/g,'&amp;').replace(/"/g,'&quot;')+'"'
+        +  (sel===n?' selected':'')+'>'+n.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</option>';
+  }
+  return out;
+}
 // Amounts the applicator corrected by hand, keyed by product index.
 // Cleared whenever the job changes so a measured figure never carries over.
 var amtOverride = {};
@@ -940,7 +989,8 @@ function updateTotalsPreview() {
   if(spotElPrev&&spotElPrev.style.display!=='none') spotSqFtPrev=spotElPrev.value.trim();
   function esc(x){return String(x==null?'':x).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');}
   var rows=[], any=false;
-  d.products.forEach(function(p,pi){
+  d.products.forEach(function(p0,pi){
+    var p=effProduct(p0,pi);
     var useSq=areaForProduct(p,sqFt,spotSqFtPrev);
     var g=calcRange(p.rate,useSq);
     var mx=calcMixed(p.rate,useSq);
@@ -960,6 +1010,8 @@ function updateTotalsPreview() {
           +'oninput="onAmtEdit('+pi+',this)">'
         +'<span class="tp-unit">'+esc(g.unit)+'</span>'
         +'<span class="tp-tag'+(measured?' meas':'')+'">'+(measured?'measured':'calculated')+'</span>'
+        +'<span class="tp-swap"><select class="tp-swapsel'+(prodSwap[pi]?' on':'')+'" '
+          +'onchange="onProdSwap('+pi+',this)">'+swapOptions(pi,p0.product)+'</select></span>'
         +'</div>');
       if(over) rows.push('<div class="tp-warn">Over label: '+over.entered.toFixed(2)+' '
         +esc(over.unit)+' entered, label allows up to '+over.max.toFixed(2)+' '+esc(over.unit)
@@ -1265,6 +1317,7 @@ function showCustAddr(keepTyped){
 }
 function onCust(){
   clearAmtOverrides();
+  clearProdSwap();
   clearSiteAddr();
   var name=document.getElementById('cSel').value;
   var svc=document.getElementById('sSel').value;
@@ -1363,7 +1416,7 @@ function onSqCatType(cat){
   }
   updateTotalsPreview();
 }
-function onSvc(){clearAmtOverrides();var s=document.getElementById('sSel').value;var card=document.getElementById('pcard'),grid=document.getElementById('pgrd'),note=document.getElementById('multiNote');if(!s||!SV[s]){card.classList.remove('show');return;}var d=SV[s];grid.innerHTML=[['Product',jn(d.products,'product')],['Active Ing',jn(d.products,'activeIng')],['EPA Reg #',jn(d.products,'epa')],['Rate',jn(d.products,'rate')],['Method',jn(d.products,'method')],['Target Pest',jn(d.products,'targetPest')],['App Site',d.appSite]].map(function(kv){return'<span class="pk">'+kv[0]+'</span><span class="pv">'+kv[1]+'</span>';}).join('');note.innerHTML=d.products.length>1?'<div class="multi-note">⚡ '+d.products.length+' products — combined into 1 log entry</div>':'';card.classList.add('show');populateSiteDropdown(d.appSite);
+function onSvc(){clearAmtOverrides();clearProdSwap();var s=document.getElementById('sSel').value;var card=document.getElementById('pcard'),grid=document.getElementById('pgrd'),note=document.getElementById('multiNote');if(!s||!SV[s]){card.classList.remove('show');return;}var d=SV[s];grid.innerHTML=[['Product',jn(d.products,'product')],['Active Ing',jn(d.products,'activeIng')],['EPA Reg #',jn(d.products,'epa')],['Rate',jn(d.products,'rate')],['Method',jn(d.products,'method')],['Target Pest',jn(d.products,'targetPest')],['App Site',d.appSite]].map(function(kv){return'<span class="pk">'+kv[0]+'</span><span class="pv">'+kv[1]+'</span>';}).join('');note.innerHTML=d.products.length>1?'<div class="multi-note">⚡ '+d.products.length+' products — combined into 1 log entry</div>':'';card.classList.add('show');populateSiteDropdown(d.appSite);
   var custName=document.getElementById('cSel').value;
   var cat=getSvcCat(s);
   // Always reset ALL sq ft fields first, then show only the right one
@@ -1432,19 +1485,20 @@ function addEntry(){var cust=document.getElementById('cSel').value;var svc=docum
   var spotSqFt='';
   var spotEl=document.getElementById('spotSqIn');
   if(spotEl&&spotEl.style.display!=='none') spotSqFt=spotEl.value.trim();
-  var calcSqFt=sqFt;var sv=document.getElementById('siteOv').value;var appSite=(sv&&sv!=='Use service default')?sv:d.appSite;var userN=document.getElementById('nts').value.trim();var wxTemp=document.getElementById('wxT').value;var combined={product:jn(d.products,'product'),activeIng:jn(d.products,'activeIng'),epa:jn(d.products,'epa'),rate:jn(d.products,'rate'),totalMixed:jn(d.products,'totalMixed'),method:jn(d.products,'method'),targetPest:jn(d.products,'targetPest')};var svcSq=d.products.map(function(p){
+  var calcSqFt=sqFt;var sv=document.getElementById('siteOv').value;var appSite=(sv&&sv!=='Use service default')?sv:d.appSite;var userN=document.getElementById('nts').value.trim();var wxTemp=document.getElementById('wxT').value;var combined={product:jn(eff,'product'),activeIng:jn(eff,'activeIng'),epa:jn(eff,'epa'),rate:jn(eff,'rate'),totalMixed:jn(eff,'totalMixed'),method:jn(eff,'method'),targetPest:jn(eff,'targetPest')};var eff=d.products.map(function(p,pi){ return effProduct(p,pi); });
+  var svcSq=eff.map(function(p){
     return areaForProduct(p,sqFt,spotSqFt);
   });
   // Keep one slot per product so the totals report pairs each amount with the
   // right product name - a filtered-out blank used to shift every later index.
-  var totals=d.products.map(function(p,pi){return amountFor(p,pi,svcSq[pi]).text;});
+  var totals=eff.map(function(p,pi){return amountFor(p,pi,svcSq[pi]).text;});
   // The preview flags an over-label amount, but say it again on save so it
   // cannot be missed. Never block - a record has to be able to state what
   // actually went out, even when that was too much.
-  var overs=d.products.map(function(p,pi){return amtOverLabel(p,pi,svcSq[pi]);}).filter(Boolean);
+  var overs=eff.map(function(p,pi){return amtOverLabel(p,pi,svcSq[pi]);}).filter(Boolean);
   if(overs.length) toast('⚠ Logged OVER label rate — check the amount');
   var tu=totals.some(Boolean)?totals.map(function(t){return t||'—';}).join(' + '):'';
-  var mixed=d.products.map(function(p,pi){return calcMixed(p.rate,svcSq[pi]);}).filter(Boolean);var entry={id:Date.now(),customer:cust,service:svc,date:document.getElementById('aDate').textContent,time:document.getElementById('aTime').textContent,sqFt:sqFt,spotSqFt:spotSqFt,totalUsed:tu,weather:document.getElementById('wxC').value,temp:wxTemp?(wxTemp+'°F'):'',wind:document.getElementById('wxW').value,product:combined.product,activeIng:combined.activeIng,epa:combined.epa,rate:combined.rate,totalMixed:(mixed.length?mixed.join(' + '):combined.totalMixed),method:combined.method,targetPest:combined.targetPest,appSite:appSite,siteAddress:(enteredSiteAddress()||siteAddressFor(cust)),notes:userN?d.notes+' | '+userN:d.notes,synced:false};queue.push(entry);saveQ();renderLog();syncEntry(entry);clearAmtOverrides();clearSiteAddr();toast('✓ Added to log');document.getElementById('cSel').value='';document.getElementById('sSel').value='';['sqLawn','sqPHC','sqPest','sqAquatic'].forEach(function(id){
+  var mixed=eff.map(function(p,pi){return calcMixed(p.rate,svcSq[pi]);}).filter(Boolean);var entry={id:Date.now(),customer:cust,service:svc,date:document.getElementById('aDate').textContent,time:document.getElementById('aTime').textContent,sqFt:sqFt,spotSqFt:spotSqFt,totalUsed:tu,weather:document.getElementById('wxC').value,temp:wxTemp?(wxTemp+'°F'):'',wind:document.getElementById('wxW').value,product:combined.product,activeIng:combined.activeIng,epa:combined.epa,rate:combined.rate,totalMixed:(mixed.length?mixed.join(' + '):combined.totalMixed),method:combined.method,targetPest:combined.targetPest,appSite:appSite,siteAddress:(enteredSiteAddress()||siteAddressFor(cust)),notes:userN?d.notes+' | '+userN:d.notes,synced:false};queue.push(entry);saveQ();renderLog();syncEntry(entry);clearAmtOverrides();clearProdSwap();clearSiteAddr();toast('✓ Added to log');document.getElementById('cSel').value='';document.getElementById('sSel').value='';['sqLawn','sqPHC','sqPest','sqAquatic'].forEach(function(id){
     var el=document.getElementById(id);
     if(el){el.value='';el.style.cssText='';}
   });

@@ -1162,15 +1162,23 @@ try{
 function isTimestamp(v){
   return /^\s*\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(String(v||''));
 }
-function fmtAddr(c){
+// The street line is missing on 74 customers - overwritten by the old
+// updateCustomer bug - but city/state/zip survived on most of them. A partial
+// address beats a blank required field, so build what is there and let the
+// caller flag that the street is gone.
+function addrParts(c){
   var raw=c.Address||c.address||'';
-  if(isTimestamp(raw)) return '';
-  var line=[raw].filter(Boolean);
+  if(isTimestamp(raw)) raw='';
   var tail=[(c.City||c.city||''),(c.State||c.state||''),(c.Zip||c.zip||'')]
     .map(function(x){return String(x||'').trim();}).filter(Boolean);
   var t=tail.length?(tail[0]+(tail.length>1?', '+tail.slice(1).join(' '):'')):'';
-  return [line.join(''), t].filter(Boolean).join(', ').trim();
+  return {street:String(raw).trim(), rest:t};
 }
+function fmtAddr(c){
+  var p=addrParts(c);
+  return [p.street, p.rest].filter(Boolean).join(', ').trim();
+}
+function hasStreet(c){ return !!addrParts(c).street; }
 function loadAddresses(){
   fetch(FIELDPRO_API,{method:'POST',headers:{'Content-Type':'text/plain'},
                       body:JSON.stringify({action:'fpGetAll'})})
@@ -1220,7 +1228,12 @@ function showCustAddr(){
   var a=custAddress(name), fb=nameSite(name);
   el.style.display='block';
   function esc(x){ return String(x).replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
-  if(a){
+  // A city/zip with no street number reads as complete at a glance; say so.
+  var streetless = a && !/\d/.test(String(a).split(',')[0]);
+  if(a && streetless){
+    el.innerHTML='<span style="color:#e0a030">Site address (STREET MISSING)</span> '+esc(a)
+      +'<br><span style="color:#e0a030">Add the street line to this customer in FieldPro.</span>';
+  } else if(a){
     el.innerHTML='<span style="color:var(--mut)">Site address</span> '+esc(a);
   } else if(fb){
     el.innerHTML='<span style="color:#e0a030">Site (from customer name)</span> '+esc(fb)+

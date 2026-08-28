@@ -230,6 +230,11 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans)}
     <label>SPOT SPRAY SQ FT <small>— herbicide/pesticide area only (product 2+)</small></label>
     <input type="number" id="spotSqIn" placeholder="e.g. 2500" min="0" step="100" oninput="updateTotalsPreview()">
   </div>
+  <!-- Trunk diameter, for products dosed per inch of DBH rather than per area -->
+  <div class="fld" id="dbhFld" style="display:none">
+    <label>TRUNK DIAMETER <small>&mdash; total DBH inches treated, dose is per inch</small></label>
+    <input type="number" id="dbhIn" placeholder="e.g. 14" min="0" step="0.5" oninput="updateTotalsPreview()">
+  </div>
   <!-- One-time sq ft for services that don't save sq ft (yellow jackets, mosquito, bare ground spot etc.) -->
   <div class="fld" id="onetimeSqFld" style="display:none">
     <label id="onetimeSqLbl">AREA TREATED SQ FT <small>— required each visit, not saved to customer</small></label>
@@ -908,6 +913,16 @@ function rateFor(r, units, per){
 function prodPerK(r){   return rateFor(r, PROD_UNIT, '1000'); }  // product per 1000 sqft
 function prodPerGal(r){ return rateFor(r, PROD_UNIT, 'gal');  }  // product per gal of mix
 function galPerK(r){    return rateFor(r, 'gal',     '1000'); }  // spray output per 1000 sqft
+function prodPerInch(r){ return rateFor(r, PROD_UNIT, 'inch'); } // product per inch of DBH
+// Trees are dosed by trunk diameter, not by area. A rate written
+// "0.1-0.4 fl oz / inch DBH" needs inches, and no sq ft will ever answer it.
+function isDbhRate(rate){
+  var r = String(rate||'').toLowerCase();
+  return !skipRate(r) && !!prodPerInch(r);
+}
+function svcNeedsDbh(d){
+  return !!(d && d.products && d.products.some(function(p){ return isDbhRate(p.rate); }));
+}
 function skipRate(r){
   return r.indexOf('record')>=0 || r.indexOf('per void')>=0 || r.indexOf('direct')>=0;
 }
@@ -943,11 +958,14 @@ function tankMult(r){
 
 // Amount of PRODUCT applied over this area, as numbers, so the caller can
 // both format it and check an entered amount against the top of the range.
-function calcRange(rate, sqFt) {
-  if (!sqFt || !rate) return null;
+function calcRange(rate, qty) {
+  if (!qty || !rate) return null;
   var r = rate.toLowerCase();
   if (skipRate(r)) return null;
-  var sqK = parseFloat(sqFt) / 1000;
+  // Dosed per inch of trunk diameter - qty is DBH inches, not square feet.
+  var pin = prodPerInch(r);
+  if (pin) return {lo:pin.lo*parseFloat(qty), hi:pin.hi*parseFloat(qty), unit:pin.unit};
+  var sqK = parseFloat(qty) / 1000;
   // 1. A stated product-per-1000 rate wins - it is rig-independent.
   var pk = prodPerK(r);
   if (pk) return {lo:pk.lo*sqK, hi:pk.hi*sqK, unit:pk.unit};
@@ -976,8 +994,16 @@ function svcHasSpot(d){
 }
 // Area to charge a product against: the spot area only if that product is
 // spot-applied AND a spot area was actually entered.
-function areaForProduct(p, sqFt, spotSqFt){
+function areaForProduct(p, sqFt, spotSqFt, dbhIn){
+  if (isDbhRate(p && p.rate)) return dbhIn || '';
   return (spotSqFt && isSpotProduct(p)) ? spotSqFt : sqFt;
+}
+// The DBH box, read off its wrapper the same way the spot area is.
+function currentDbh(){
+  var fld = document.getElementById('dbhFld');
+  var el  = document.getElementById('dbhIn');
+  if(!fld || !el || fld.style.display === 'none') return '';
+  return el.value.trim();
 }
 // Product chosen at the truck in place of the one on the service, keyed by
 // product index. Entry-time only - the service definition is never touched.
@@ -1111,16 +1137,17 @@ function updateTotalsPreview() {
   if(!sqFt){box.style.display='none';return;}
   var d=SV[svc];
   var spotSqFtPrev=currentSpotSqFt();
+  var dbhPrev=currentDbh();
   function esc(x){return String(x==null?'':x).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');}
   var rows=[], any=false;
   d.products.forEach(function(p0,pi){
     var p=effProduct(p0,pi);
-    var useSq=areaForProduct(p,sqFt,spotSqFtPrev);
+    var useSq=areaForProduct(p,sqFt,spotSqFtPrev,dbhPrev);
     var g=calcRange(p.rate,useSq);
     var mx=calcMixed(p.rate,useSq);
     if(!g&&!mx) return;
     any=true;
-    var note=(spotSqFtPrev&&isSpotProduct(p))?' (spot)':'';
+    var note=isDbhRate(p.rate)?(' ('+dbhPrev+' in DBH)'):((spotSqFtPrev&&isSpotProduct(p))?' (spot)':'');
     var nm=(d.products.length>1?p.product:'Total used')+note;
     if(g){
       var ov=amtOverride[pi];
@@ -1631,6 +1658,12 @@ function onSvc(){clearAmtOverrides();clearProdSwap();var s=document.getElementBy
     sprayMode='full';
   }
   showSqForCat(custName, cat);
+  var dbhFld=document.getElementById('dbhFld');
+  if(dbhFld){
+    var needsDbh=svcNeedsDbh(svcDef);
+    dbhFld.style.display = needsDbh ? 'block' : 'none';
+    if(!needsDbh){ var di=document.getElementById('dbhIn'); if(di){di.value='';di.style.borderColor='';} }
+  }
   updateCapNote();
   updateTotalsPreview();}
 function addEntry(){var cust=document.getElementById('cSel').value;var svc=document.getElementById('sSel').value;if(!cust){toast('⚠ Select a customer');return;}if(!svc){toast('⚠ Select a service');return;}clock();var d=SV[svc];var svcCat=getSvcCat(svc);
@@ -1676,6 +1709,15 @@ function addEntry(){var cust=document.getElementById('cSel').value;var svc=docum
     return;
   }
   var spotSqFt=currentSpotSqFt();
+  var dbhIn=currentDbh();
+  if(svcNeedsDbh(d) && !dbhIn){
+    var df=document.getElementById('dbhFld');
+    if(df) df.style.display='block';
+    var di=document.getElementById('dbhIn');
+    if(di){di.style.borderColor='var(--red)';di.focus();}
+    toast('⚠ Trunk diameter (DBH inches) is required');
+    return;
+  }
   if(sprayMode==='spot' && svcNeedsSprayChoice(d) && !spotSqFt){
     var ssf=document.getElementById('spotSqFld');
     if(ssf) ssf.style.display='block';
@@ -1686,7 +1728,7 @@ function addEntry(){var cust=document.getElementById('cSel').value;var svc=docum
   }
   var calcSqFt=sqFt;var sv=document.getElementById('siteOv').value;var appSite=(sv&&sv!=='Use service default')?sv:d.appSite;var userN=document.getElementById('nts').value.trim();var wxTemp=document.getElementById('wxT').value;var eff=d.products.map(function(p,pi){ return effProduct(p,pi); });var combined={product:jn(eff,'product'),activeIng:jn(eff,'activeIng'),epa:jn(eff,'epa'),rate:jn(eff,'rate'),totalMixed:jn(eff,'totalMixed'),method:jn(eff,'method'),targetPest:jn(eff,'targetPest')};
   var svcSq=eff.map(function(p){
-    return areaForProduct(p,sqFt,spotSqFt);
+    return areaForProduct(p,sqFt,spotSqFt,dbhIn);
   });
   // Keep one slot per product so the totals report pairs each amount with the
   // right product name - a filtered-out blank used to shift every later index.
@@ -1702,14 +1744,14 @@ function addEntry(){var cust=document.getElementById('cSel').value;var svc=docum
     toast('⚠ Over the '+CAP_PER_YEAR+'-per-year blanket 2,4-D cap for this site');
   }
   var tu=totals.some(Boolean)?totals.map(function(t){return t||'—';}).join(' + '):'';
-  var mixed=eff.map(function(p,pi){return calcMixed(p.rate,svcSq[pi]);}).filter(Boolean);var entry={id:Date.now(),customer:cust,service:svc,date:document.getElementById('aDate').textContent,time:document.getElementById('aTime').textContent,sqFt:sqFt,spotSqFt:spotSqFt,totalUsed:tu,weather:document.getElementById('wxC').value,temp:wxTemp?(wxTemp+'°F'):'',wind:document.getElementById('wxW').value,product:combined.product,activeIng:combined.activeIng,epa:combined.epa,rate:combined.rate,totalMixed:(mixed.length?mixed.join(' + '):combined.totalMixed),method:combined.method,targetPest:combined.targetPest,appSite:appSite,siteAddress:(enteredSiteAddress()||siteAddressFor(cust)),notes:userN?d.notes+' | '+userN:d.notes,synced:false};queue.push(entry);saveQ();renderLog();syncEntry(entry);clearAmtOverrides();clearProdSwap();clearSiteAddr();toast('✓ Added to log');document.getElementById('cSel').value='';document.getElementById('sSel').value='';['sqLawn','sqPHC','sqPest','sqAquatic'].forEach(function(id){
+  var mixed=eff.map(function(p,pi){return calcMixed(p.rate,svcSq[pi]);}).filter(Boolean);var entry={id:Date.now(),customer:cust,service:svc,date:document.getElementById('aDate').textContent,time:document.getElementById('aTime').textContent,sqFt:sqFt,spotSqFt:spotSqFt,totalUsed:tu,weather:document.getElementById('wxC').value,temp:wxTemp?(wxTemp+'°F'):'',wind:document.getElementById('wxW').value,product:combined.product,activeIng:combined.activeIng,epa:combined.epa,rate:combined.rate,totalMixed:(mixed.length?mixed.join(' + '):combined.totalMixed),method:combined.method,targetPest:combined.targetPest,appSite:appSite,siteAddress:(enteredSiteAddress()||siteAddressFor(cust)),notes:(function(){var n=userN?d.notes+' | '+userN:d.notes; return dbhIn?(n+' | DBH treated: '+dbhIn+' in'):n;})(),synced:false};queue.push(entry);saveQ();renderLog();syncEntry(entry);clearAmtOverrides();clearProdSwap();clearSiteAddr();toast('✓ Added to log');document.getElementById('cSel').value='';document.getElementById('sSel').value='';['sqLawn','sqPHC','sqPest','sqAquatic'].forEach(function(id){
     var el=document.getElementById(id);
     if(el){el.value='';el.style.cssText='';}
   });
   hideSqFlds();
   showSprayToggle(false);
   sprayMode='full';
-  var sp=document.getElementById('spotSqIn');if(sp){sp.value='';sp.style.borderColor='';}
+  var sp=document.getElementById('spotSqIn');if(sp){sp.value='';sp.style.borderColor='';}var db=document.getElementById('dbhIn');if(db){db.value='';db.style.borderColor='';}var dbf=document.getElementById('dbhFld');if(dbf)dbf.style.display='none';
   var ot=document.getElementById('onetimeSqIn');if(ot) ot.value='';
   var otf=document.getElementById('onetimeSqFld');if(otf) otf.style.display='none';
   document.getElementById('siteOv').value='';

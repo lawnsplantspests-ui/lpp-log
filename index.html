@@ -100,6 +100,9 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans)}
 .tot-card{background:var(--sur);border:1px solid var(--bdr);border-radius:10px;overflow:hidden;margin-bottom:8px}
 .tot-row{display:flex;justify-content:space-between;align-items:center;padding:9px 12px;border-bottom:1px solid var(--bdr)}.tot-row:last-child{border-bottom:none}
 .tot-row span{font-size:12px}.tot-row b{font-size:13px;font-family:var(--mono);color:var(--grn)}
+.tot-sub{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:5px 12px 5px 26px;border-bottom:1px solid var(--bdr);background:var(--sur2)}.tot-sub:last-child{border-bottom:none}
+.tot-sub span{font-size:10px;color:var(--dim);line-height:1.4}.tot-sub i{display:block;font-style:normal;font-size:9px;font-family:var(--mono);color:var(--mut)}
+.tot-sub b{font-size:10px;font-family:var(--mono);color:var(--dim);white-space:nowrap}
 .period-bar{background:var(--sur);border:1px solid var(--bdr);border-radius:10px;padding:9px 12px;margin-bottom:10px;display:flex;align-items:center;gap:8px}
 .period-bar label{font-size:10px;font-family:var(--mono);color:var(--dim)}
 .period-bar select{background:transparent;border:none;outline:none;color:var(--txt);font-size:13px;font-family:var(--mono);appearance:none;flex:1}
@@ -1946,6 +1949,311 @@ function moL(m,y){var n=['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep
 function exMoEl(el){var w=el.closest("[data-mk]");if(w)exMo(w.dataset.mk);}
 function exMo(mk){var p=mk.split('-');var all=[];archive.filter(function(a){var q=a.date.split('/');return q[2]===p[0]&&(q[0].length<2?'0':'')+q[0]===p[1];}).forEach(function(d){all=all.concat(d.entries);});if(!all.length){toast('No entries');return;}cpTsv(all);toast('✓ '+all.length+' rows copied');}
 // delMo removed — archive is permanent
+// -- CHEMICAL TRACKING --------------------------------------------
+// A record names a product ("Spring Valley 15-0-3 Protego Ima-Lambda") and how
+// much of it went out ("4.00 lbs"). What a label caps, and what a regulator
+// asks about, is the ACTIVE INGREDIENT underneath it - and several brands of
+// the same chemistry sit on the truck, so a brand total hides the real load.
+//
+// The joined activeIng field on an entry cannot be split back apart: products
+// are joined with ' + ' and a single product's own active ingredients are too
+// ("Imidacloprid 0.2% + Lambda-Cyhalothrin 0.04%"). So the chemistry is looked
+// up per product name, where the string is still whole.
+var SQ_FT_PER_ACRE = 43560;
+
+// Annual ceilings in lb a.i. per acre per year, per site, read off the labels.
+// Keyed by the lower-cased chemical name the activeIng strings already use.
+var AI_CAPS = {
+  'imidacloprid':       {max:0.4,  label:'Imidacloprid',       src:'Quali-Pro 2F 53883-514'},
+  'lambda-cyhalothrin': {max:0.36, label:'Lambda-Cyhalothrin', src:'Cyzmic CS 53883-389'}
+};
+// Within this fraction of the cap there is no room left for another pass.
+// Rd 4 alone spends 87% of the imidacloprid year, so it has to read as amber.
+var CAP_NEAR = 0.85;
+
+function aiKey(n){ return String(n||'').trim().toLowerCase(); }
+
+// Nothing to weigh for a fertilizer, a soil amendment or pond bacteria.
+function notAPesticide(s){
+  return /n\/a|fertilizer only|soil amendment|not a pesticide/i.test(String(s||''));
+}
+
+// "Imidacloprid 0.2% + Lambda-Cyhalothrin 0.04%" -> two chemicals and their
+// strengths. A name carrying no percent ("2,4-D + MCPP + Dicamba") still counts
+// as applied - it just cannot be weighed, which has to be said out loud rather
+// than quietly dropped.
+function parseAI(s){
+  var str = String(s||'').trim();
+  if(!str || notAPesticide(str)) return [];
+  return str.split(' + ').map(function(part){
+    var t = part.replace(/\([^)]*\)/g,'').trim();
+    var m = t.match(/([0-9.]+)[ ]*%/);
+    var name = (m ? t.slice(0, m.index) : t).replace(/[\s,]+$/,'').trim();
+    if(!name) return null;
+    return {name:name, pct:m ? parseFloat(m[1]) : null};
+  }).filter(function(x){ return !!x; });
+}
+
+// Product name -> its own active-ingredient string. Services name products the
+// library does not carry, and the library carries equipment-suffixed variants
+// services never name, so both are read. The library is written last because
+// it is the list that has been corrected against the jugs.
+function aiIndex(){
+  var map = {};
+  Object.keys(SV||{}).forEach(function(k){
+    ((SV[k]||{}).products||[]).forEach(function(p){
+      if(p.product && p.activeIng && !map[p.product]) map[p.product] = p.activeIng;
+    });
+  });
+  (productLib||[]).forEach(function(p){
+    if(p.product && p.activeIng) map[p.product] = p.activeIng;
+  });
+  return map;
+}
+
+// "12.50 lbs" / "3.00 fl oz (avg)" -> a number and a unit. 'fl oz' has to be
+// tried before 'oz' or every fluid ounce is read as a dry one.
+function parseAmt(s){
+  var m = String(s||'').match(/([0-9.]+)[ ]*(fl[ ]*oz|lbs?|oz|gal)/i);
+  if(!m) return null;
+  return {amt:parseFloat(m[1]), unit:normUnit(m[2].toLowerCase())};
+}
+
+// Pounds of product - but only where the record actually weighs it. A liquid is
+// recorded in fluid ounces or gallons, and turning volume into weight needs the
+// product's density in lb/gal, which no field here carries. Guessing it would
+// put an invented number on a regulatory record, so liquids return null and get
+// reported as the volume that was actually written down.
+function lbsOfProduct(amt, unit){
+  if(unit === 'lbs') return amt;
+  if(unit === 'oz')  return amt / 16;
+  return null;
+}
+
+// Total the active ingredient in a set of records.
+//   byAI   - chemical -> applications, lb a.i., any volume left unweighed, and
+//            the tradenames underneath it: the chemical is what the label caps,
+//            the brand is what comes off the shelf and has to be reordered. One
+//            bag of Protego is one product amount under BOTH its chemicals, so
+//            brand amounts repeat across chemicals on purpose.
+//   sites  - customer -> chemical -> lb a.i. per acre, for the per-site caps
+//   noChem - product names with no chemistry on file, so the gap stays visible
+function chemTotals(entries){
+  var idx = aiIndex(), byAI = {}, sites = {}, noChem = {};
+
+  (entries||[]).forEach(function(e){
+    var prods = String(e.product||'').split(' + ').map(function(s){return s.trim();})
+                                     .filter(function(s){ return !!s; });
+    var tots  = String(e.totalUsed||'').split(' + ').map(function(s){return s.trim();});
+    // Amounts are matched to products by position. If the two lists are not the
+    // same length something was hand-edited and the pairing cannot be trusted -
+    // count the pass, but do not put a number against it.
+    var paired = String(e.totalUsed||'').trim() !== '' && tots.length === prods.length;
+    // Charge it against the area treated. Only granulars get weighed here and a
+    // granular is never the spot-sprayed product, so sqFt is the honest area.
+    var acres = (parseFloat(e.sqFt)||0) / SQ_FT_PER_ACRE;
+
+    prods.forEach(function(pn, i){
+      var ai = idx[pn];
+      if(!ai){ if(!notAPesticide(pn)) noChem[pn] = (noChem[pn]||0) + 1; return; }
+      var chems = parseAI(ai);
+      if(!chems.length) return;
+      var amt = paired ? parseAmt(tots[i]) : null;
+
+      chems.forEach(function(c){
+        var k = aiKey(c.name);
+        var r = byAI[k] || (byAI[k] = {label:c.name, apps:0, lbs:0, weighed:0,
+                                       vol:{}, unweighed:0, brands:{}});
+        var b = r.brands[pn] || (r.brands[pn] = {apps:0, lbs:0, used:{}, pct:c.pct});
+        r.apps++; b.apps++;
+        // Gallons in a Total Used cell are carrier water, not concentrate. No
+        // liquid here is ever dosed by the gallon per 1000 sqft, so a rate that
+        // states only gal/1000 made the calculator write the SPRAY MIX into this
+        // field - every Strike 3 row on the book carries one. Counting those
+        // would report 1780 gallons of 3-way herbicide put out in a season.
+        if(!amt || amt.unit === 'gal'){ r.unweighed++; return; }
+        // The brand line reports the product that came off the shelf, in the
+        // units it was recorded in - that is the reorder number.
+        b.used[amt.unit] = (b.used[amt.unit]||0) + amt.amt;
+        var lbProd = lbsOfProduct(amt.amt, amt.unit);
+        if(lbProd === null || c.pct === null){
+          r.vol[amt.unit] = (r.vol[amt.unit]||0) + amt.amt;
+          r.unweighed++;
+          return;
+        }
+        var lbAI = lbProd * c.pct / 100;
+        r.lbs += lbAI;
+        b.lbs += lbAI;
+        r.weighed++;
+        if(acres > 0 && e.customer){
+          var s = sites[e.customer] || (sites[e.customer] = {});
+          s[k] = (s[k]||0) + lbAI / acres;
+        }
+      });
+    });
+  });
+  return {byAI:byAI, sites:sites, noChem:noChem};
+}
+
+// The label ceilings are per site per year, so a business-wide pound total
+// cannot be compared to one. What can is how many properties reached it.
+function capBreaches(sites){
+  var out = {};
+  Object.keys(AI_CAPS).forEach(function(k){ out[k] = {over:[], near:[]}; });
+  Object.keys(sites||{}).forEach(function(cust){
+    Object.keys(AI_CAPS).forEach(function(k){
+      var load = sites[cust][k];
+      if(!load) return;
+      var max = AI_CAPS[k].max;
+      if(load > max * 1.001)          out[k].over.push({cust:cust, load:load});
+      else if(load >= max * CAP_NEAR) out[k].near.push({cust:cust, load:load});
+    });
+  });
+  Object.keys(out).forEach(function(k){
+    ['over','near'].forEach(function(b){
+      out[k][b].sort(function(a,c){ return c.load - a.load; });
+    });
+  });
+  return out;
+}
+
+// Broadcast 2,4-D is capped by COUNT of passes, not by weight, so it is read
+// off the records the same way the entry-screen counter reads it.
+function blanket24DBySite(entries){
+  var out = {};
+  (entries||[]).forEach(function(e){
+    if(e.customer && isBlanket24D(e)) out[e.customer] = (out[e.customer]||0) + 1;
+  });
+  return out;
+}
+
+function fmtLb(v){ return v >= 1 ? v.toFixed(2) : v.toFixed(3); }
+function fmtVol(vol){
+  return Object.keys(vol).map(function(u){ return vol[u].toFixed(2)+' '+u; }).join(', ');
+}
+// Years that have log tabs on the sheet, newest first.
+function tabYears(){
+  var seen = {}, out = [];
+  (availableTabs||[]).forEach(function(t){
+    var y = String(t).split('_')[1];
+    if(y && !seen[y]){ seen[y] = 1; out.push(y); }
+  });
+  return out.sort().reverse();
+}
+function isYearPeriod(p){ return String(p||'').indexOf('year:') === 0; }
+function yearTabs(yr){
+  return (availableTabs||[]).filter(function(t){ return String(t).split('_')[1] === String(yr); });
+}
+
+// The chemical sections of the TOTALS page.
+function chemHtml(all, period){
+  var t = chemTotals(all);
+  var keys = Object.keys(t.byAI).sort(function(a,b){
+    var d = t.byAI[b].lbs - t.byAI[a].lbs;
+    return d !== 0 ? d : t.byAI[b].apps - t.byAI[a].apps;
+  });
+  if(!keys.length) return '';
+  var note = 'font-size:10px;font-family:var(--mono);color:var(--mut);margin:-4px 2px 8px;line-height:1.5';
+
+  var html = '<div class="tot-sec">By Active Ingredient</div><div class="tot-card">';
+  keys.forEach(function(k){
+    var r = t.byAI[k];
+    var right = r.weighed
+      ? '<b style="font-size:11px">'+fmtLb(r.lbs)+' lb a.i.</b>'
+      : '<b style="font-size:11px;color:var(--dim)">'+(fmtVol(r.vol)||'not weighable')+'</b>';
+    var sub = r.apps + ' application' + (r.apps===1?'':'s');
+    // Say which part of a chemical's total could not be weighed, so a partial
+    // number never reads as the whole load.
+    if(r.weighed && r.unweighed){
+      sub += ' · ' + r.unweighed + ' not weighable'
+           + (fmtVol(r.vol) ? ' (' + fmtVol(r.vol) + ')' : '');
+    }
+    html += '<div class="tot-row"><span style="font-size:11px">'+esc(r.label)
+         +  '<div style="font-size:9px;font-family:var(--mono);color:var(--mut);margin-top:2px">'+sub+'</div>'
+         +  '</span>'+right+'</div>';
+    // Which jugs and bags this chemical actually came out of. Several brands of
+    // one chemistry get swapped by what is in stock, so the chemical total says
+    // nothing about what needs reordering - the brand lines do.
+    Object.keys(r.brands).sort(function(a,b){
+      var d = r.brands[b].lbs - r.brands[a].lbs;
+      return d !== 0 ? d : r.brands[b].apps - r.brands[a].apps;
+    }).forEach(function(pn){
+      var b = r.brands[pn];
+      html += '<div class="tot-sub"><span>'+esc(pn)
+           +  '<i>'+b.apps+'×'+(b.pct!==null?' · '+b.pct+'%':'')+'</i></span>'
+           +  '<b>'+(fmtVol(b.used)||'—')+'</b></div>';
+    });
+  });
+  html += '</div><div style="'+note+'">'
+       +  'Indented lines are the tradenames that chemical came out of, in the units they were '
+       +  'recorded in — a product carrying two chemicals is listed under both. '
+       +  'Pounds are weight of product × its strength. Liquids show the volume recorded — '
+       +  'turning fluid ounces into pounds needs a lb/gal density the label data here does not carry.'
+       +  '</div>';
+
+  var noChem = Object.keys(t.noChem);
+  if(noChem.length){
+    html += '<div class="tot-card" style="border-color:var(--wrn)">'
+         +  '<div class="tot-row"><span style="font-size:11px;color:var(--wrn)">No chemistry on file'
+         +  '<div style="font-size:9px;font-family:var(--mono);color:var(--mut);margin-top:2px">'
+         +  noChem.slice(0,6).map(esc).join(' · ')
+         +  (noChem.length>6 ? ' +'+(noChem.length-6)+' more' : '')
+         +  '</div></span><b style="font-size:11px;color:var(--wrn)">'+noChem.length+'</b></div></div>';
+  }
+
+  // Caps are annual and per site, so they only mean anything over a full year.
+  if(!isYearPeriod(period) && period !== 'all') return html;
+
+  var br = capBreaches(t.sites), rows = '';
+  Object.keys(AI_CAPS).forEach(function(k){
+    if(!t.byAI[k]) return;
+    var cap = AI_CAPS[k], b = br[k], col, msg;
+    if(b.over.length){
+      col = 'var(--red)';
+      msg = b.over.length + ' site' + (b.over.length===1?'':'s') + ' over';
+    } else if(b.near.length){
+      col = 'var(--wrn)';
+      msg = b.near.length + ' site' + (b.near.length===1?'':'s') + ' with no room left';
+    } else {
+      col = 'var(--grn)';
+      msg = 'every site clear';
+    }
+    var names = b.over.concat(b.near).slice(0,5).map(function(x){
+      return esc(x.cust) + ' ' + fmtLb(x.load);
+    }).join(' · ');
+    rows += '<div class="tot-row"><span style="font-size:11px">'+cap.label
+         +  '<div style="font-size:9px;font-family:var(--mono);color:var(--mut);margin-top:2px">'
+         +  cap.max+' lb a.i./acre/yr · '+cap.src
+         +  (names ? '<br>'+names : '')+'</div></span>'
+         +  '<b style="font-size:11px;color:'+col+'">'+msg+'</b></div>';
+  });
+
+  var d24 = blanket24DBySite(all), sites24 = Object.keys(d24);
+  if(sites24.length){
+    var over24 = sites24.filter(function(c){ return d24[c] >  CAP_PER_YEAR; });
+    var at24   = sites24.filter(function(c){ return d24[c] === CAP_PER_YEAR; });
+    var c24 = over24.length ? 'var(--red)' : at24.length ? 'var(--wrn)' : 'var(--grn)';
+    var m24 = over24.length ? over24.length+' site'+(over24.length===1?'':'s')+' over'
+            : at24.length   ? at24.length+' site'+(at24.length===1?'':'s')+' at the cap'
+            : 'every site clear';
+    rows += '<div class="tot-row"><span style="font-size:11px">2,4-D — broadcast passes'
+         +  '<div style="font-size:9px;font-family:var(--mono);color:var(--mut);margin-top:2px">'
+         +  CAP_PER_YEAR+' per site per year · spot under 1000 sq ft does not count'
+         +  (over24.length||at24.length ? '<br>'+over24.concat(at24).slice(0,5).map(function(c){
+              return esc(c)+' '+d24[c];
+            }).join(' · ') : '')
+         +  '</div></span><b style="font-size:11px;color:'+c24+'">'+m24+'</b></div>';
+  }
+
+  if(rows){
+    html += '<div class="tot-sec">Annual Label Caps — per site</div><div class="tot-card">'+rows+'</div>'
+         +  '<div style="'+note+'">'
+         +  'Caps are per property per year, so what is counted is properties, not the book total. '
+         +  'Read off the records that could be weighed — a site treated from a liquid source is not in this count.'
+         +  '</div>';
+  }
+  return html;
+}
 function renderTotals(){
   var sel = document.getElementById('totPer');
   var period = sel ? sel.value : 'month';
@@ -1971,6 +2279,9 @@ function renderTotals(){
   } else if(period === 'lastmonth'){
     var lm = new Date(n.getFullYear(), n.getMonth()-1, 1);
     tabsNeeded = [getTabName(lm)];
+  } else if(isYearPeriod(period)){
+    // A year means every month tab that year has, not just the ones already read.
+    tabsNeeded = yearTabs(period.slice(5));
   } else if(period === 'all'){
     tabsNeeded = availableTabs.slice();
   } else {
@@ -2007,6 +2318,16 @@ function populateTotalsDropdown(){
     '<option value="month">This Month</option>',
     '<option value="lastmonth">Last Month</option>',
   ];
+
+  // Whole seasons first - the label caps are annual, so a year is the period
+  // the chemical totals are actually read over.
+  var yrs = tabYears();
+  if(yrs.length){
+    opts.push('<option disabled style="color:var(--mut)">── Seasons ──</option>');
+    yrs.forEach(function(y){
+      opts.push('<option value="year:'+y+'">'+y+' Season</option>');
+    });
+  }
 
   // Add available month tabs sorted newest first
   if(availableTabs.length > 0){
@@ -2098,14 +2419,17 @@ function doRenderTotals(){
     html+='</div>';
   }
 
+  // Chemical tracking: what the caps are actually written against.
+  html+=chemHtml(all, period);
+
   // By service
   html+='<div class="tot-sec">By Service</div><div class="tot-card">'
     +Object.entries(bySvc).sort(function(a,b){return b[1]-a[1];}).slice(0,15).map(function(kv){
       return'<div class="tot-row"><span style="font-size:11px">'+kv[0]+'</span><b>'+kv[1]+'</b></div>';
     }).join('')+'</div>';
 
-  // By month (all time only)
-  if(period==='all'&&Object.keys(byMo).length>1){
+  // By month (a whole season or all time — anything spanning more than one)
+  if((period==='all'||isYearPeriod(period))&&Object.keys(byMo).length>1){
     html+='<div class="tot-sec">By Month</div><div class="tot-card">'
       +Object.entries(byMo).map(function(kv){return'<div class="tot-row"><span>'+kv[0]+'</span><b>'+kv[1]+'</b></div>';}).join('')
       +'</div>';
@@ -2215,6 +2539,14 @@ function getPE(period){
     return all.filter(function(e){
       var d = parseEntryDate(e.date);
       return d && d.getFullYear() === lm.getFullYear() && d.getMonth() === lm.getMonth();
+    });
+  }
+
+  if(isYearPeriod(period)){
+    var yr = parseInt(period.slice(5));
+    return all.filter(function(e){
+      var d = parseEntryDate(e.date);
+      return d && d.getFullYear() === yr;
     });
   }
 

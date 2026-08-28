@@ -2178,6 +2178,46 @@ function dbhFor(e){
   return m ? parseFloat(m[1]) : 0;
 }
 
+// A per-application label maximum is a different animal from an annual cap. It
+// is blown on ONE visit by ONE product, and no yearly total will ever show it -
+// the imidacloprid drench that went out at three times the per-inch rate sits
+// inside a season that is comfortably under its per-acre ceiling.
+//
+// The area a product is charged against is decided by THAT PRODUCT'S own method,
+// never the record's. Charging a broadcast product against the spot area is how
+// 45 perfectly compliant Rd 5 passes read as 1.8x overdoses: the bifenthrin went
+// over the whole lawn, the herbicide over the spot, and one sq ft figure cannot
+// answer for both.
+function overLabelRate(entries){
+  var out = [];
+  (entries||[]).forEach(function(e){
+    var prods = String(e.product||'').split(' + ').map(function(s){return s.trim();});
+    var rates = String(e.rate||'').split(' + ');
+    var tots  = String(e.totalUsed||'').split(' + ');
+    var meths = String(e.method||'').split(' + ');
+    // Every joined field has to line up or the pairing cannot be trusted.
+    if(tots.length !== prods.length) return;
+    if(rates.length !== prods.length) return;
+    if(meths.length !== prods.length) return;
+    var sq = parseFloat(e.sqFt) || 0, spot = parseFloat(e.spotSqFt) || 0, dbh = dbhFor(e);
+    prods.forEach(function(pn, i){
+      var amt = parseAmt(tots[i]);
+      // Gallons in Total Used are carrier water; there is no product amount to check.
+      if(!amt || amt.unit === 'gal') return;
+      var qty = isDbhRate(rates[i]) ? dbh
+              : (spot && isSpotProduct({method:meths[i]})) ? spot : sq;
+      if(!qty) return;
+      var g = calcRange(rates[i], qty);
+      if(!g) return;
+      if(amt.amt > g.hi * 1.001){
+        out.push({date:e.date, customer:e.customer, product:pn, used:amt.amt,
+                  max:g.hi, unit:g.unit, qty:qty, dbh:isDbhRate(rates[i])});
+      }
+    });
+  });
+  return out.sort(function(a,b){ return (b.used/b.max) - (a.used/a.max); });
+}
+
 function fmtLb(v){ return v >= 1 ? v.toFixed(2) : v.toFixed(3); }
 function fmtVol(vol){
   return Object.keys(vol).map(function(u){ return vol[u].toFixed(2)+' '+u; }).join(', ');
@@ -2260,6 +2300,25 @@ function chemHtml(all, period){
          +  (noChem.length>6 ? ' +'+(noChem.length-6)+' more' : '')
          +  '</div></span><b style="font-size:11px;color:var(--wrn)">'+noChem.length+'</b></div></div>';
   }
+
+  // Per-application limits are not annual, so this one is shown for every period.
+  var orl = overLabelRate(all);
+  html += '<div class="tot-sec">Against the Label Rate</div><div class="tot-card">';
+  if(!orl.length){
+    html += '<div class="tot-row"><span style="font-size:11px">Every application within its label rate'
+         +  '<div style="font-size:9px;font-family:var(--mono);color:var(--mut);margin-top:2px">'
+         +  'each amount checked against its own product maximum, over the area it was charged against</div>'
+         +  '</span><b style="font-size:11px">clear</b></div>';
+  } else {
+    orl.slice(0,12).forEach(function(o){
+      html += '<div class="tot-row"><span style="font-size:11px">'+esc(o.customer)+' · '+esc(o.date)
+           +  '<div style="font-size:9px;font-family:var(--mono);color:var(--mut);margin-top:2px">'+esc(o.product)+'<br>'
+           +  o.used+' '+o.unit+' over '+o.qty+(o.dbh?' in trunk':' sq ft')+' · label max '+o.max.toFixed(2)+' '+o.unit
+           +  '</div></span><b style="font-size:11px;color:var(--red)">'+(o.used/o.max).toFixed(1)+'x</b></div>';
+    });
+    if(orl.length>12) html += '<div class="tot-row"><span style="font-size:11px;color:var(--mut)">+'+(orl.length-12)+' more</span><b></b></div>';
+  }
+  html += '</div>';
 
   // Caps are annual and per site, so they only mean anything over a full year.
   if(!isYearPeriod(period) && period !== 'all') return html;

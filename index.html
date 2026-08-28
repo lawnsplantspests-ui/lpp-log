@@ -2059,7 +2059,16 @@ function chemTotals(entries){
     var acres = sq / SQ_FT_PER_ACRE;
 
     prods.forEach(function(pn, i){
-      var info = idx[pn];
+      // A product the library never carried still has its chemistry written on
+      // the record itself - but only reach for it when the record names ONE
+      // product, because activeIng and rate are joined with ' + ' exactly like
+      // the product list and cannot be split back apart. The library wins where
+      // it has an entry: it is the list that was corrected against the jugs.
+      // Without this the older brand names - 118 bifenthrin passes logged as
+      // Talstar rather than CrossCheck - fall out of the totals entirely.
+      var info = idx[pn] || (prods.length === 1 && e.activeIng
+        ? {ai:e.activeIng, rate:e.rate || ''}
+        : null);
       if(!info){ if(!notAPesticide(pn)) noChem[pn] = (noChem[pn]||0) + 1; return; }
       var chems = parseAI(info.ai);
       if(!chems.length) return;

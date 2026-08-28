@@ -1994,20 +1994,22 @@ function parseAI(s){
   }).filter(function(x){ return !!x; });
 }
 
-// Product name -> its own active-ingredient string. Services name products the
+// Product name -> its chemistry and its label rate. Services name products the
 // library does not carry, and the library carries equipment-suffixed variants
 // services never name, so both are read. The library is written last because
 // it is the list that has been corrected against the jugs.
-function aiIndex(){
+function prodIndex(){
   var map = {};
+  function put(p){
+    if(!p || !p.product || !p.activeIng) return;
+    map[p.product] = {ai:p.activeIng, rate:p.rate || ''};
+  }
   Object.keys(SV||{}).forEach(function(k){
     ((SV[k]||{}).products||[]).forEach(function(p){
-      if(p.product && p.activeIng && !map[p.product]) map[p.product] = p.activeIng;
+      if(p && p.product && !map[p.product]) put(p);
     });
   });
-  (productLib||[]).forEach(function(p){
-    if(p.product && p.activeIng) map[p.product] = p.activeIng;
-  });
+  (productLib||[]).forEach(put);
   return map;
 }
 
@@ -2019,11 +2021,11 @@ function parseAmt(s){
   return {amt:parseFloat(m[1]), unit:normUnit(m[2].toLowerCase())};
 }
 
-// Pounds of product - but only where the record actually weighs it. A liquid is
-// recorded in fluid ounces or gallons, and turning volume into weight needs the
-// product's density in lb/gal, which no field here carries. Guessing it would
-// put an invented number on a regulatory record, so liquids return null and get
-// reported as the volume that was actually written down.
+// Pounds of product - dry goods only, and deliberately so. A liquid is measured
+// in ounces of concentrate and that is what gets reported for it: turning fluid
+// ounces into pounds needs a density no field here carries, and the ounces are
+// the number that matters anyway - it is what comes out of the jug and what has
+// to be reordered.
 function lbsOfProduct(amt, unit){
   if(unit === 'lbs') return amt;
   if(unit === 'oz')  return amt / 16;
@@ -2039,7 +2041,7 @@ function lbsOfProduct(amt, unit){
 //   sites  - customer -> chemical -> lb a.i. per acre, for the per-site caps
 //   noChem - product names with no chemistry on file, so the gap stays visible
 function chemTotals(entries){
-  var idx = aiIndex(), byAI = {}, sites = {}, noChem = {};
+  var idx = prodIndex(), byAI = {}, sites = {}, noChem = {};
 
   (entries||[]).forEach(function(e){
     var prods = String(e.product||'').split(' + ').map(function(s){return s.trim();})
@@ -2051,32 +2053,61 @@ function chemTotals(entries){
     var paired = String(e.totalUsed||'').trim() !== '' && tots.length === prods.length;
     // Charge it against the area treated. Only granulars get weighed here and a
     // granular is never the spot-sprayed product, so sqFt is the honest area.
-    var acres = (parseFloat(e.sqFt)||0) / SQ_FT_PER_ACRE;
+    var sq = parseFloat(e.sqFt) || 0;
+    var spot = parseFloat(e.spotSqFt) || 0;
+    var wasSpot = /SPOT SPRAY ONLY/i.test(String(e.method||''));
+    var acres = sq / SQ_FT_PER_ACRE;
 
     prods.forEach(function(pn, i){
-      var ai = idx[pn];
-      if(!ai){ if(!notAPesticide(pn)) noChem[pn] = (noChem[pn]||0) + 1; return; }
-      var chems = parseAI(ai);
+      var info = idx[pn];
+      if(!info){ if(!notAPesticide(pn)) noChem[pn] = (noChem[pn]||0) + 1; return; }
+      var chems = parseAI(info.ai);
       if(!chems.length) return;
-      var amt = paired ? parseAmt(tots[i]) : null;
+      var amt = paired ? parseAmt(tots[i]) : null, calc = false;
+
+      // Gallons in a Total Used cell are carrier water, not concentrate. No
+      // liquid here is dosed by the gallon per 1000 sqft, so a rate stating only
+      // gal/1000 made the calculator write the SPRAY MIX into this field, and
+      // every Strike 3 row on the book carries one. Counting them would report
+      // 1780 gallons of 3-way herbicide put out in a season.
+      if(amt && amt.unit === 'gal') amt = null;
+
+      // With the mix discarded there is no concentrate figure left, so work it
+      // back out of the label rate over the area - the same sum the app runs to
+      // fill Total Used in the first place. Without it every Strike 3 pass on
+      // the book reads as no product used at all.
+      // A tree is dosed per inch of trunk, and the diameter is only ever written
+      // into the note text - there is no column to read it back out of. Feeding
+      // square feet to a per-inch rate is how 2 oz becomes 24000, so a DBH rate
+      // is left alone rather than derived.
+      if(!amt && !isDbhRate(info.rate)){
+        // A spot pass charges the sprayed product against the spot area only.
+        var area = (spot && wasSpot && followsSprayMode({rate:info.rate})) ? spot : sq;
+        var g = area ? calcRange(info.rate, area) : null;
+        if(g && g.unit !== 'gal'){
+          amt = {amt:(g.lo + g.hi) / 2, unit:g.unit};
+          calc = true;
+        }
+      }
 
       chems.forEach(function(c){
         var k = aiKey(c.name);
         var r = byAI[k] || (byAI[k] = {label:c.name, apps:0, lbs:0, weighed:0,
-                                       vol:{}, unweighed:0, brands:{}});
-        var b = r.brands[pn] || (r.brands[pn] = {apps:0, lbs:0, used:{}, pct:c.pct});
+                                       vol:{}, unweighed:0, unmeasured:0,
+                                       calc:0, brands:{}});
+        var b = r.brands[pn] || (r.brands[pn] = {apps:0, lbs:0, used:{}, calc:0, pct:c.pct});
         r.apps++; b.apps++;
-        // Gallons in a Total Used cell are carrier water, not concentrate. No
-        // liquid here is ever dosed by the gallon per 1000 sqft, so a rate that
-        // states only gal/1000 made the calculator write the SPRAY MIX into this
-        // field - every Strike 3 row on the book carries one. Counting those
-        // would report 1780 gallons of 3-way herbicide put out in a season.
-        if(!amt || amt.unit === 'gal'){ r.unweighed++; return; }
-        // The brand line reports the product that came off the shelf, in the
-        // units it was recorded in - that is the reorder number.
+        if(!amt){ r.unmeasured++; return; }
+        // The brand line reports what came off the shelf, in the unit it is sold
+        // and measured in - pounds for a bag, fluid ounces of concentrate for a
+        // jug. That is the reorder number.
         b.used[amt.unit] = (b.used[amt.unit]||0) + amt.amt;
+        if(calc){ b.calc++; r.calc++; }
         var lbProd = lbsOfProduct(amt.amt, amt.unit);
-        if(lbProd === null || c.pct === null){
+        // Liquids are not weighed at all, by design. A figure worked back out of
+        // a label rate is a good reorder number but it is not a measurement, so
+        // it never reaches the pounds or the cap arithmetic either.
+        if(lbProd === null || c.pct === null || calc){
           r.vol[amt.unit] = (r.vol[amt.unit]||0) + amt.amt;
           r.unweighed++;
           return;
@@ -2158,16 +2189,19 @@ function chemHtml(all, period){
   var html = '<div class="tot-sec">By Active Ingredient</div><div class="tot-card">';
   keys.forEach(function(k){
     var r = t.byAI[k];
+    // Dry goods carry a pounds-of-active-ingredient figure. Liquids report the
+    // concentrate that came out of the jug and nothing else - no pounds.
     var right = r.weighed
       ? '<b style="font-size:11px">'+fmtLb(r.lbs)+' lb a.i.</b>'
-      : '<b style="font-size:11px;color:var(--dim)">'+(fmtVol(r.vol)||'not weighable')+'</b>';
+      : '<b style="font-size:11px;color:var(--dim)">'+(fmtVol(r.vol)||'not recorded')+'</b>';
     var sub = r.apps + ' application' + (r.apps===1?'':'s');
-    // Say which part of a chemical's total could not be weighed, so a partial
-    // number never reads as the whole load.
+    // Say which part of a chemical's total is not in the pounds, so a partial
+    // figure never reads as the whole load.
     if(r.weighed && r.unweighed){
-      sub += ' · ' + r.unweighed + ' not weighable'
+      sub += ' · ' + r.unweighed + ' liquid'
            + (fmtVol(r.vol) ? ' (' + fmtVol(r.vol) + ')' : '');
     }
+    if(r.unmeasured) sub += ' · ' + r.unmeasured + ' with no amount on file';
     html += '<div class="tot-row"><span style="font-size:11px">'+esc(r.label)
          +  '<div style="font-size:9px;font-family:var(--mono);color:var(--mut);margin-top:2px">'+sub+'</div>'
          +  '</span>'+right+'</div>';
@@ -2179,16 +2213,22 @@ function chemHtml(all, period){
       return d !== 0 ? d : r.brands[b].apps - r.brands[a].apps;
     }).forEach(function(pn){
       var b = r.brands[pn];
-      html += '<div class="tot-sub"><span>'+esc(pn)
-           +  '<i>'+b.apps+'×'+(b.pct!==null?' · '+b.pct+'%':'')+'</i></span>'
-           +  '<b>'+(fmtVol(b.used)||'—')+'</b></div>';
+      // A calculated figure is the label rate over the area treated, not a
+      // measurement, so it is never passed off as one.
+      var prov = b.apps+'×'+(b.pct!==null?' · '+b.pct+'%':'')
+               + (b.calc ? ' · '+(b.calc===b.apps?'from label rate':b.calc+' from label rate') : '');
+      html += '<div class="tot-sub"><span>'+esc(pn)+'<i>'+prov+'</i></span>'
+           +  '<b'+(b.calc===b.apps?' style="font-style:italic"':'')+'>'
+           +  (fmtVol(b.used)||'—')+'</b></div>';
     });
   });
   html += '</div><div style="'+note+'">'
-       +  'Indented lines are the tradenames that chemical came out of, in the units they were '
-       +  'recorded in — a product carrying two chemicals is listed under both. '
-       +  'Pounds are weight of product × its strength. Liquids show the volume recorded — '
-       +  'turning fluid ounces into pounds needs a lb/gal density the label data here does not carry.'
+       +  'Indented lines are the tradenames that chemical came out of — a product carrying two '
+       +  'chemicals is listed under both. Dry goods are weighed: pounds of product × its strength. '
+       +  'Liquids are reported as ounces of concentrate out of the jug, never as pounds. '
+       +  'Italic figures were worked out from the label rate over the area treated, because the '
+       +  'record kept only the gallons of spray mix — good for reordering, not a measurement, '
+       +  'and kept out of the caps below.'
        +  '</div>';
 
   var noChem = Object.keys(t.noChem);

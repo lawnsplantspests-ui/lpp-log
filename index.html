@@ -381,7 +381,8 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans)}
     <div style="font-size:10px;font-family:var(--mono);color:var(--mut);letter-spacing:1.2px;text-transform:uppercase">Product Library</div>
     <button class="btn-sm" onclick="toggleLibForm()" style="color:var(--grn);border-color:var(--gdim)">+ Add Product</button>
   </div>
-  <div class="search-bar" style="margin-bottom:10px"><span style="color:var(--mut)">🔍</span><input type="text" id="libQ" placeholder="Search products…" oninput="renderLibProducts()"></div>
+  <div class="search-bar" style="margin-bottom:6px"><span style="color:var(--mut)">🔍</span><input type="text" id="libQ" placeholder="Search name, ingredient, EPA #…" oninput="renderLibProducts()"></div>
+  <div id="libMeta" style="font-size:10px;font-family:var(--mono);color:var(--mut);margin:0 2px 10px"></div>
   <div id="libForm" style="display:none;background:var(--sur2);border:1px solid var(--gdim);border-radius:10px;padding:12px;margin-bottom:12px">
     <div style="font-size:11px;font-family:var(--mono);color:var(--grn);margin-bottom:10px;text-transform:uppercase;letter-spacing:.8px">New Reference Product</div>
     <div class="prod-field"><label>Product Name</label><input type="text" id="libName" placeholder="e.g. Bifenthrin 7.9%"></div>
@@ -444,6 +445,15 @@ var DEFAULT_SV={'Lawn Care - Rd 1 (Fertilizer Only)':{appSite:'Full Lawn',notes:
 // ── STATE ────────────────────────────────────────────────────────
 var queue      = JSON.parse(localStorage.getItem('pda_q') || '[]');
 var productLib = []; // loaded from Google Sheets Products tab
+// The library is read far more than it is written, and it is read while standing
+// at a truck, so it is kept in name order. Sorting the array itself rather than
+// each view keeps every index (the delete button's especially) pointing at the
+// row the user is actually looking at.
+function sortLib(lib){
+  return (lib||[]).sort(function(a,b){
+    return String(a.product||'').localeCompare(String(b.product||''), undefined, {sensitivity:'base', numeric:true});
+  });
+}
 var archive = (function(){
   var raw = JSON.parse(localStorage.getItem('pda_a') || '[]');
   // Detect old format: archive entries with only 1 entry each (individual rows not grouped)
@@ -538,10 +548,10 @@ function loadAll() {
 
       // Load products from Products tab
       if (d.products && d.products.length) {
-        productLib = d.products;
+        productLib = sortLib(d.products);
         localStorage.setItem('pda_lib_cache', JSON.stringify(productLib));
       } else {
-        productLib = JSON.parse(localStorage.getItem('pda_lib_cache') || '[]');
+        productLib = sortLib(JSON.parse(localStorage.getItem('pda_lib_cache') || '[]'));
       }
       buildDD(); renderCusts(); renderProds(); renderLibProducts(); populateLibDDs();
       // Always restore from Sheets to get latest entries
@@ -2462,8 +2472,8 @@ function getLibProducts(){
   return productLib;
 }
 function saveLibProducts(lib){
-  productLib = lib;
-  localStorage.setItem('pda_lib_cache', JSON.stringify(lib));
+  productLib = sortLib(lib);
+  localStorage.setItem('pda_lib_cache', JSON.stringify(productLib));
 }
 function toggleLibForm(){
   var f=document.getElementById('libForm');
@@ -2504,21 +2514,46 @@ function addLibProduct(){
 function deleteLibProduct(idx){
   var lib=getLibProducts();
   var prod=lib[idx];
+  if(!prod) return;
   if(!confirm('Remove "'+prod.product+'" from library?'))return;
-  lib.splice(idx,1);
+  // Resolve by name so a re-sort between render and click cannot delete a
+  // different product than the one on screen.
+  var at=-1;
+  for(var i=0;i<lib.length;i++){ if(lib[i].product===prod.product){ at=i; break; } }
+  if(at<0) return;
+  lib.splice(at,1);
   saveLibProducts(lib);
   renderLibProducts();
   api({action:'deleteProduct', product:prod.product}, null, null);
 }
 function renderLibProducts(){
-  var lib=getLibProducts();
+  var all=getLibProducts();
   var el=document.getElementById('libList');
   if(!el)return;
-  if(!lib.length){
+  if(!all.length){
     el.innerHTML='<div style="text-align:center;padding:20px;color:var(--mut);font-size:12px;font-family:var(--mono)">No products yet — tap + Add Product to build your library</div>';
     return;
   }
-  el.innerHTML=lib.map(function(p,i){
+  // The search box has always called this function but nothing ever filtered.
+  // Match on the fields you would actually search by at a truck - the name, the
+  // active ingredient, the EPA number and the pest.
+  var q=String((document.getElementById('libQ')||{}).value||'').trim().toLowerCase();
+  var rows=all.map(function(p,i){ return {p:p, i:i}; });
+  if(q) rows=rows.filter(function(r){
+    var p=r.p;
+    return (String(p.product||'')+' '+String(p.activeIng||'')+' '+String(p.epa||'')+' '+String(p.targetPest||''))
+             .toLowerCase().indexOf(q)>=0;
+  });
+  var meta=document.getElementById('libMeta');
+  if(meta) meta.textContent = q ? (rows.length+' of '+all.length+' products') : (all.length+' products');
+  if(!rows.length){
+    el.innerHTML='<div style="text-align:center;padding:20px;color:var(--mut);font-size:12px;font-family:var(--mono)">Nothing matches “'+q.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'”</div>';
+    return;
+  }
+  // Carry the index in the FULL list, not the filtered one - the delete button
+  // resolves against the whole library.
+  el.innerHTML=rows.map(function(r){
+    var p=r.p, i=r.i;
     return '<div class="prod-item" style="margin-bottom:8px">'
       +'<div style="padding:10px 13px;display:flex;align-items:flex-start;justify-content:space-between">'
       +'<div style="flex:1;min-width:0">'

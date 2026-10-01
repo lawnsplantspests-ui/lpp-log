@@ -936,12 +936,13 @@ function jn(arr,f){ return arr.map(function(p){return p[f]||'';}).join(' + '); }
 // "fl oz" must precede "oz" in the alternation, and ranges must be tried
 // before singles - otherwise "2-3 lbs / 1000" matches on the "3" and
 // silently logs the high end of the range.
-var PROD_UNIT = 'fl[ ]*oz|lbs?|oz';
+var PROD_UNIT = 'fl[ ]*oz|lbs?|oz|spikes?';
 var NUM = '([0-9.]+)', WS = '[ ]*';
 
 function normUnit(u){
   u = u.replace(/ /g,'');
   if (u === 'lb')   return 'lbs';
+  if (u === 'spike') return 'spikes';
   if (u === 'floz') return 'fl oz';
   return u;
 }
@@ -977,7 +978,7 @@ function skipRate(r){
 function fmtAmt(lo, hi, unit, suffix){
   var isRange = Math.abs(hi-lo) > 1e-9;
   var v = isRange ? (lo+hi)/2 : lo;
-  return v.toFixed(2)+' '+unit+(suffix||'')+(isRange?' (avg)':'');
+  return v.toFixed(unit==='spikes'?0:2)+' '+unit+(suffix||'')+(isRange?' (avg)':'');
 }
 
 // Gallons of finished spray put out over the area -> "Total Mixed".
@@ -1010,6 +1011,7 @@ function calcRange(rate, qty) {
   if (skipRate(r)) return null;
   // Dosed per inch of trunk diameter - qty is DBH inches, not square feet.
   var pin = prodPerInch(r);
+  if (pin && pin.unit === 'spikes') { var n = spikeCount(qty); return {lo:n, hi:n, unit:'spikes'}; }
   if (pin) return {lo:pin.lo*parseFloat(qty), hi:pin.hi*parseFloat(qty), unit:pin.unit};
   var sqK = parseFloat(qty) / 1000;
   // 1. A stated product-per-1000 rate wins - it is rig-independent.
@@ -1073,6 +1075,13 @@ function removeDbhRow(btn){
   syncDbhRows();
 }
 function resetDbhRows(){ var box = document.getElementById('dbhRows'); if(box) box.innerHTML = dbhRowHtml(); var el = document.getElementById('dbhIn'); if(el) el.value = ''; }
+// 1 spike per inch of trunk, at least 2 per tree. Uses the trees on screen when they add up to the inches asked for.
+function spikeCount(qty){
+  var dt = currentDbhDetail(), q = parseFloat(qty) || 0;
+  if(dt.list.length && Math.abs(dt.total - q) < 1e-6)
+    return dt.list.reduce(function(a, x){ return a + Math.max(2, Math.round(x)); }, 0);
+  return q > 0 ? Math.max(2, Math.round(q)) : 0;
+}
 function parseDbh(str){
   var t = String(str||'').toLowerCase().replace(/(\d+(?:\.\d+)?)\s*[x\u00d7*]\s*(\d+(?:\.\d+)?)/g, function(m, n, d){
     var c = Math.min(Math.round(parseFloat(n)), 200), out = [];
@@ -1102,8 +1111,7 @@ function updateDbhHint(){
   var d = SV[document.getElementById('sSel').value];
   var spikes = d && d.products && d.products.some(function(p, pi){ return /spike/i.test(effProduct(p, pi).totalMixed || ''); });
   if(spikes){
-    var n = dt.list.reduce(function(a, x){ return a + Math.max(2, Math.round(x)); }, 0);
-    txt += ' \u2014 about ' + n + ' spikes (1 per inch, at least 2 per tree)';
+    txt += ' \u2014 ' + spikeCount(dt.total) + ' spikes (1 per inch, at least 2 per tree)';
   }
   h.textContent = txt;
 }
@@ -1214,7 +1222,7 @@ function amountFor(p, pi, area){
   var unit = g ? g.unit : '';
   var n = parseFloat(ov);
   if(isNaN(n)) return {text: calc, measured: false};
-  return {text: n.toFixed(2) + (unit ? ' ' + unit : '') + ' (measured)', measured: true};
+  return {text: n.toFixed(unit==='spikes'?0:2) + (unit ? ' ' + unit : '') + ' (measured)', measured: true};
 }
 // Over the top of the label range for this area?
 function amtOverLabel(p, pi, area){
@@ -1262,7 +1270,7 @@ function updateTotalsPreview() {
     var nm=(d.products.length>1?p.product:'Total used')+note;
     if(g){
       var ov=amtOverride[pi];
-      var shown=(ov!==undefined&&ov!=='')?ov:((Math.abs(g.hi-g.lo)>1e-9?(g.lo+g.hi)/2:g.lo).toFixed(2));
+      var shown=(ov!==undefined&&ov!=='')?ov:((Math.abs(g.hi-g.lo)>1e-9?(g.lo+g.hi)/2:g.lo).toFixed(g.unit==='spikes'?0:2));
       var over=amtOverLabel(p,pi,useSq);
       var measured=(ov!==undefined&&ov!=='');
       rows.push('<div class="tp-row">'
@@ -2612,9 +2620,9 @@ function doRenderTotals(){
         pn=pn.trim();if(!pn)return;
         var tv=tots[i]?tots[i].trim():'';
         if(!tv)return;
-        var m=tv.match(/([\d.]+)\s*(lbs?|oz|fl\s*oz|gal)/i);
+        var m=tv.match(/([\d.]+)\s*(lbs?|oz|fl\s*oz|gal|spikes?)/i);
         if(!m)return;
-        var amt=parseFloat(m[1]);var unit=m[2].toLowerCase().replace(/\s/g,'');
+        var amt=parseFloat(m[1]);var unit=m[2].toLowerCase().replace(/\s/g,'');if(unit==='spike')unit='spikes';
         if(!byProd[pn]) byProd[pn]={};
         byProd[pn][unit]=(byProd[pn][unit]||0)+amt;
       });

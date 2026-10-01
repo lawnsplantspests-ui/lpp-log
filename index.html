@@ -782,7 +782,7 @@ function blanket24DCount(cust){
 }
 
 // Fetch a specific month tab from Sheets and merge into archive
-var APP_BUILD = '2026-10-01-d';
+var APP_BUILD = '2026-10-01-e';
 (function(){ setTimeout(function(){ var v=document.getElementById('appVer'); if(v) v.textContent='v'+APP_BUILD; }, 0); })();
 // Is a newer copy of this page on the server than the one this phone is running? Checked on open, when the app comes back to the front, and every 20 minutes.
 function checkForUpdate(){
@@ -1225,7 +1225,7 @@ function galChipsFor(cat){
   var b = function(label, js){ return '<button type="button" class="btn-sm" onclick="'+js+'">'+label+'</button>'; };
   return cat === 'phc'
     ? b('&frac12; tank','setTanks(0.5)')+b('1 tank','setTanks(1)')+b('2 tanks','setTanks(2)')+b('3 tanks','setTanks(3)')
-    : b('1 gal','setGal(1)')+b('1&frac12; gal','setGal(1.5)')+b('2 gal','setGal(2)')+b('3 gal','setGal(3)')+b('1 tank (4)','setTanks(1)');
+    : b('&frac12; gal','setGal(0.5)')+b('1 gal','setGal(1)')+b('1&frac12; gal','setGal(1.5)')+b('2 gal','setGal(2)')+b('1 tank (4)','setTanks(1)');
 }
 function currentGallons(){
   var f=document.getElementById('galFld'), el=document.getElementById('galIn');
@@ -1286,6 +1286,9 @@ function fillSavedGal(){
   if(/^Pest Control - Perimeter/i.test(svc)){
     if(!g.value) g.value = '1';
     h.textContent = 'Most perimeter treatments take 1-2 gal. Starts at 1: change it to what you actually sprayed.';
+  } else if(/^Yellow Jackets - Bifenthrin Liquid/i.test(svc)){
+    if(!g.value) g.value = '0.5';
+    h.textContent = 'Usually ½ gal on a ground nest, 1 gal when knocking down flyers. Starts at ½: change it to what you sprayed.';
   } else if(cat==='phc' && savedGal > 0 && savedFor === cust){
     if(!g.value) g.value = String(savedGal);
     h.textContent = 'Usual for this property: ' + savedGal + ' gal. Change it to what went through the backpack today.';
@@ -1998,6 +2001,7 @@ function onSvc(){clearAmtOverrides();clearProdSwap();var s=document.getElementBy
     sprayMode='full';
   }
   showSqForCat(custName, cat);
+  var gi0=document.getElementById('galIn'); if(gi0) gi0.value='';   // a new service starts with its own gallons, never the last job's
   syncMeasureBoxes();
   updateCapNote();
   updateTotalsPreview();}

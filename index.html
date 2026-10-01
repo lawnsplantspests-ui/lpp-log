@@ -235,8 +235,9 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans)}
   </div>
   <!-- Trunk diameter, for products dosed per inch of DBH rather than per area -->
   <div class="fld" id="dbhFld" style="display:none">
-    <label>TRUNK DIAMETER <small>&mdash; total DBH inches treated, dose is per inch</small></label>
-    <input type="number" id="dbhIn" placeholder="e.g. 14" min="0" step="0.5" oninput="updateTotalsPreview()">
+    <label>TRUNK DIAMETER <small>&mdash; one number per tree treated today, e.g. 12, 14. Dose is per inch</small></label>
+    <input type="text" inputmode="decimal" id="dbhIn" placeholder="e.g. 14   or   12, 14, 10" autocomplete="off" oninput="updateTotalsPreview()">
+    <div id="dbhHint" style="font-size:12px;color:var(--text-dim);margin-top:4px"></div>
   </div>
   <!-- One-time sq ft for services that don't save sq ft (yellow jackets, mosquito, bare ground spot etc.) -->
   <div class="fld" id="onetimeSqFld" style="display:none">
@@ -1042,11 +1043,34 @@ function areaForProduct(p, sqFt, spotSqFt, dbhIn){
   return (spotSqFt && isSpotProduct(p)) ? spotSqFt : sqFt;
 }
 // The DBH box, read off its wrapper the same way the spot area is.
-function currentDbh(){
+function parseDbh(str){
+  var list = String(str||'').split(/[\s,;+&]+/).map(parseFloat).filter(function(n){ return n > 0; });
+  var total = list.reduce(function(a, n){ return a + n; }, 0);
+  return {list:list, total:Math.round(total*100)/100};
+}
+function currentDbhDetail(){
   var fld = document.getElementById('dbhFld');
   var el  = document.getElementById('dbhIn');
-  if(!fld || !el || fld.style.display === 'none') return '';
-  return el.value.trim();
+  if(!fld || !el || fld.style.display === 'none') return {list:[], total:0};
+  return parseDbh(el.value);
+}
+function currentDbh(){
+  var t = currentDbhDetail().total;
+  return t > 0 ? String(t) : '';
+}
+// "3 trees - 36 in total" (and the spike count when the product is spikes: 1 per inch, at least 2 per tree)
+function updateDbhHint(){
+  var h = document.getElementById('dbhHint'); if(!h) return;
+  var dt = currentDbhDetail();
+  if(!dt.list.length){ h.textContent=''; return; }
+  var txt = dt.list.length + (dt.list.length===1?' tree':' trees') + ' \u2014 ' + dt.total + ' in total';
+  var d = SV[document.getElementById('sSel').value];
+  var spikes = d && d.products && d.products.some(function(p, pi){ return /spike/i.test(effProduct(p, pi).totalMixed || ''); });
+  if(spikes){
+    var n = dt.list.reduce(function(a, x){ return a + Math.max(2, Math.round(x)); }, 0);
+    txt += ' \u2014 about ' + n + ' spikes (1 per inch, at least 2 per tree)';
+  }
+  h.textContent = txt;
 }
 // Product chosen at the truck in place of the one on the service, keyed by
 // product index. Entry-time only - the service definition is never touched.
@@ -1168,6 +1192,7 @@ function amtOverLabel(p, pi, area){
   return (n > g.hi + 1e-9) ? {entered:n, max:g.hi, unit:g.unit} : null;
 }
 function updateTotalsPreview() {
+  updateDbhHint();
   var svc=document.getElementById('sSel').value;
   var box=document.getElementById('totPreview');
   var vals=document.getElementById('totPreviewVals');
@@ -1798,7 +1823,7 @@ function addEntry(){var cust=document.getElementById('cSel').value;var svc=docum
     toast('⚠ Over the '+CAP_PER_YEAR+'-per-year blanket 2,4-D cap for this site');
   }
   var tu=totals.some(Boolean)?totals.map(function(t){return t||'—';}).join(' + '):'';
-  var mixed=eff.map(function(p,pi){return calcMixed(p.rate,svcSq[pi]);}).filter(Boolean);var entry={id:Date.now(),customer:cust,service:svc,date:document.getElementById('aDate').textContent,time:document.getElementById('aTime').textContent,sqFt:sqFt,spotSqFt:spotSqFt,totalUsed:tu,weather:document.getElementById('wxC').value,temp:wxTemp?(wxTemp+'°F'):'',wind:document.getElementById('wxW').value,product:combined.product,activeIng:combined.activeIng,epa:combined.epa,rate:combined.rate,totalMixed:(mixed.length?mixed.join(' + '):combined.totalMixed),method:combined.method,targetPest:combined.targetPest,appSite:appSite,dbhIn:dbhIn||'',siteAddress:(enteredSiteAddress()||siteAddressFor(cust)),notes:(function(){var n=userN?d.notes+' | '+userN:d.notes; return dbhIn?(n+' | DBH treated: '+dbhIn+' in'):n;})(),synced:false};queue.push(entry);saveQ();renderLog();syncEntry(entry);clearAmtOverrides();clearProdSwap();clearSiteAddr();toast('✓ Added to log');document.getElementById('cSel').value='';document.getElementById('sSel').value='';['sqLawn','sqPHC','sqPest','sqAquatic'].forEach(function(id){
+  var mixed=eff.map(function(p,pi){return calcMixed(p.rate,svcSq[pi]);}).filter(Boolean);var entry={id:Date.now(),customer:cust,service:svc,date:document.getElementById('aDate').textContent,time:document.getElementById('aTime').textContent,sqFt:sqFt,spotSqFt:spotSqFt,totalUsed:tu,weather:document.getElementById('wxC').value,temp:wxTemp?(wxTemp+'°F'):'',wind:document.getElementById('wxW').value,product:combined.product,activeIng:combined.activeIng,epa:combined.epa,rate:combined.rate,totalMixed:(mixed.length?mixed.join(' + '):combined.totalMixed),method:combined.method,targetPest:combined.targetPest,appSite:appSite,dbhIn:dbhIn||'',siteAddress:(enteredSiteAddress()||siteAddressFor(cust)),notes:(function(){var n=userN?d.notes+' | '+userN:d.notes; if(!dbhIn) return n; var dl=currentDbhDetail().list; return n+' | DBH treated: '+dbhIn+' in'+(dl.length>1?' ('+dl.length+' trees: '+dl.join(' + ')+')':'');})(),synced:false};queue.push(entry);saveQ();renderLog();syncEntry(entry);clearAmtOverrides();clearProdSwap();clearSiteAddr();toast('✓ Added to log');document.getElementById('cSel').value='';document.getElementById('sSel').value='';['sqLawn','sqPHC','sqPest','sqAquatic'].forEach(function(id){
     var el=document.getElementById(id);
     if(el){el.value='';el.style.cssText='';}
   });

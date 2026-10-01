@@ -562,6 +562,7 @@ function loadAll() {
         productLib = sortLib(JSON.parse(localStorage.getItem('pda_lib_cache') || '[]'));
       }
       buildDD(); renderCusts(); renderProds(); renderLibProducts(); populateLibDDs();
+      applyDeepLink();
       // Always restore from Sheets to get latest entries
       // (merges new entries, skips duplicates)
       loadAddresses();
@@ -577,11 +578,48 @@ function loadAll() {
       if (!custDB.length) custDB = DN.map(function(n){return{name:n,sqFt:''};});
       if (!SV || !Object.keys(SV).length) SV = JSON.parse(JSON.stringify(DEFAULT_SV));
       buildDD(); renderCusts(); renderProds();
+      applyDeepLink();
       setSUI('err','offline — cached');
       var bar = document.getElementById('offlineBar');
       if (bar) bar.style.display = 'block';
     }
   );
+}
+
+// ── OPENED FROM FIELDPRO ──────────────────────────────────────────
+// A link like ?c=Customer Name&rd=6 (or &svc=Exact Service, or &pfx=Pest Control&not=Bait) selects that customer and
+// service and then STOPS. It never saves anything: you still check the details and tap Add to Today's Log.
+var DL = (function(){
+  try {
+    var p = new URLSearchParams(location.search);
+    if (!p.get('c')) return null;
+    return { c:p.get('c'), svc:p.get('svc'), rd:p.get('rd'), pfx:p.get('pfx'), not:p.get('not'), done:false };
+  } catch(e){ return null; }
+})();
+function applyDeepLink(){
+  if(!DL || DL.done) return;
+  try {
+    var cs=document.getElementById('cSel'), ss=document.getElementById('sSel');
+    var has=function(sel,v){ for(var i=0;i<sel.options.length;i++){ if(sel.options[i].value===v) return true; } return false; };
+    DL.done=true;
+    if(!has(cs,DL.c)){ toast('Warning - from FieldPro: customer "'+DL.c+'" not found'); return; }
+    cs.value=DL.c; onCust();
+    var pick=null, names=Object.keys(SV);
+    if(DL.svc && SV[DL.svc]) pick=DL.svc;
+    else if(DL.rd){
+      var re=new RegExp('^Lawn Care - Rd '+String(DL.rd).replace(/[^0-9A-Za-z]/g,'')+'(?![0-9A-Za-z])','i');
+      var m=names.filter(function(n){ return re.test(n); });
+      if(m.length===1) pick=m[0];
+    } else if(DL.pfx){
+      var pf=DL.pfx.toLowerCase(), nt=(DL.not||'').toLowerCase();
+      var m2=names.filter(function(n){ var l=n.toLowerCase(); return l.indexOf(pf)===0 && (!nt || l.indexOf(nt)<0); });
+      if(m2.length===1) pick=m2[0];
+    }
+    if(pick){ ss.value=pick; onSvc(); }
+    toast(pick ? 'From FieldPro: '+DL.c+' - '+pick.replace(/^Lawn Care - /,'')+'. Check it, then Add.' : 'From FieldPro: '+DL.c+' - now pick the service');
+    cs.scrollIntoView({block:'start'});
+    try{ history.replaceState(null,'',location.pathname); }catch(e){}
+  } catch(e){ console.warn('FieldPro link failed:', e); }
 }
 
 // ── SAVE CUSTOMERS ────────────────────────────────────────────────

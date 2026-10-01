@@ -240,6 +240,19 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans)}
     <div id="dbhRows"></div>
     <button type="button" class="btn-sm" style="margin-top:6px" onclick="addDbhRow()">+ another size</button>
     <div id="dbhHint" style="font-size:12px;color:var(--text-dim);margin-top:6px"></div>
+    <div id="dbhSaved" style="font-size:12px;color:var(--grn);margin-top:4px"></div>
+  </div>
+  <!-- Gallons through the backpack: foundation plants and shrubs are dosed by the gallon of mix, not by area -->
+  <div class="fld" id="galFld" style="display:none">
+    <label>GALLONS SPRAYED <small>&mdash; backpack tank = 4 gal. The product amount is worked out from the mix rate</small></label>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
+      <button type="button" class="btn-sm" onclick="setTanks(0.5)">&frac12; tank</button>
+      <button type="button" class="btn-sm" onclick="setTanks(1)">1 tank</button>
+      <button type="button" class="btn-sm" onclick="setTanks(2)">2 tanks</button>
+      <button type="button" class="btn-sm" onclick="setTanks(3)">3 tanks</button>
+    </div>
+    <input type="number" id="galIn" inputmode="decimal" min="0" step="0.5" placeholder="gallons, e.g. 4" style="width:100%;border:1px solid var(--bdr);border-radius:8px;padding:9px 10px;background:var(--sur2);" oninput="updateTotalsPreview()">
+    <div id="galHint" style="font-size:12px;color:var(--text-dim);margin-top:6px"></div>
   </div>
   <!-- One-time sq ft for services that don't save sq ft (yellow jackets, mosquito, bare ground spot etc.) -->
   <div class="fld" id="onetimeSqFld" style="display:none">
@@ -596,7 +609,7 @@ var DL = (function(){
   try {
     var p = new URLSearchParams(location.search);
     if (!p.get('c')) return null;
-    return { c:p.get('c'), svc:p.get('svc'), rd:p.get('rd'), pfx:p.get('pfx'), not:p.get('not'), done:false };
+    return { c:p.get('c'), svc:p.get('svc'), rd:p.get('rd'), pfx:p.get('pfx'), not:p.get('not'), tr:p.get('tr'), gal:p.get('gal'), tm:p.get('tm'), done:false };
   } catch(e){ return null; }
 })();
 function applyDeepLink(){
@@ -607,6 +620,7 @@ function applyDeepLink(){
     DL.done=true;
     if(!has(cs,DL.c)){ toast('Warning - from FieldPro: customer "'+DL.c+'" not found'); return; }
     cs.value=DL.c; onCust();
+    savedFor=DL.c; savedTrees=parseSavedTrees(DL.tr); savedGal=parseFloat(DL.gal)||0; savedMeasured=DL.tm||'';
     var pick=null, names=Object.keys(SV);
     if(DL.svc && SV[DL.svc]) pick=DL.svc;
     else if(DL.rd){
@@ -959,6 +973,12 @@ function prodPerK(r){   return rateFor(r, PROD_UNIT, '1000'); }  // product per 
 function prodPerGal(r){ return rateFor(r, PROD_UNIT, 'gal');  }  // product per gal of mix
 function galPerK(r){    return rateFor(r, 'gal',     '1000'); }  // spray output per 1000 sqft
 function prodPerInch(r){ return rateFor(r, PROD_UNIT, 'inch'); } // product per inch of DBH
+function prodPer100Gal(r){ return rateFor(r, PROD_UNIT, '100[ ]*gal'); } // "4-8 oz / 100 gal water"
+// A rate that can be answered with gallons of finished mix: "mix: 1-4 fl oz / gal" or "4-8 oz / 100 gal water".
+function hasGalRate(rate){
+  var r = String(rate||'').toLowerCase();
+  return !skipRate(r) && !isDbhRate(rate) && !!(prodPerGal(r) || prodPer100Gal(r));
+}
 // Trees are dosed by trunk diameter, not by area. A rate written
 // "0.1-0.4 fl oz / inch DBH" needs inches, and no sq ft will ever answer it.
 function isDbhRate(rate){
@@ -986,6 +1006,10 @@ function calcMixed(rate, sqFt) {
   if (!sqFt || !rate) return '';
   var r = rate.toLowerCase();
   if (skipRate(r)) return '';
+  if (typeof sqFt === 'string' && sqFt.indexOf('g:') === 0) {
+    var gl = parseFloat(sqFt.slice(2));
+    return (gl > 0 && hasGalRate(rate)) ? fmtAmt(gl, gl, 'gal', ' spray mix') : '';
+  }
   var gk = galPerK(r);
   if (!gk) return '';
   var sqK = parseFloat(sqFt) / 1000;
@@ -1009,6 +1033,16 @@ function calcRange(rate, qty) {
   if (!qty || !rate) return null;
   var r = rate.toLowerCase();
   if (skipRate(r)) return null;
+  // Gallons sprayed, written 'g:4' - foundation plants and shrubs go by the gallon through the backpack.
+  if (typeof qty === 'string' && qty.indexOf('g:') === 0) {
+    var gal = parseFloat(qty.slice(2));
+    if (!(gal > 0)) return null;
+    var pg1 = prodPerGal(r);
+    if (pg1) return {lo:pg1.lo*gal, hi:pg1.hi*gal, unit:pg1.unit};
+    var p100 = prodPer100Gal(r);
+    if (p100) return {lo:p100.lo*gal/100, hi:p100.hi*gal/100, unit:p100.unit};
+    return null;
+  }
   // Dosed per inch of trunk diameter - qty is DBH inches, not square feet.
   var pin = prodPerInch(r);
   if (pin && pin.unit === 'spikes') { var n = spikeCount(qty); return {lo:n, hi:n, unit:'spikes'}; }
@@ -1044,17 +1078,20 @@ function svcHasSpot(d){
 // spot-applied AND a spot area was actually entered.
 function areaForProduct(p, sqFt, spotSqFt, dbhIn){
   if (isDbhRate(p && p.rate)) return dbhIn || '';
+  var gal = currentGallons();
+  if (gal && hasGalRate(p && p.rate)) return 'g:' + gal;
   return (spotSqFt && isSpotProduct(p)) ? spotSqFt : sqFt;
 }
 // The DBH box, read off its wrapper the same way the spot area is.
 // "12, 14" = two trees. "8 x 12" = eight trees of 12 in. Mix them: "6 x 12, 2 x 15".
 var DBH_IN = 'width:100%;border:1px solid var(--bdr);border-radius:8px;padding:9px 10px;background:var(--sur2);';
 function dbhRowHtml(){
-  return '<div class="dbh-row" style="display:flex;gap:8px;align-items:center;margin-top:6px">'
+  return '<div class="dbh-row" style="margin-top:8px"><div style="display:flex;gap:8px;align-items:center">'
     +'<input type="number" class="dbhc" inputmode="numeric" min="1" step="1" placeholder="trees" style="'+DBH_IN+'flex:1" oninput="syncDbhRows()">'
     +'<span style="color:var(--dim)">&times;</span>'
     +'<input type="number" class="dbhd" inputmode="decimal" min="0" step="0.5" placeholder="inches each" style="'+DBH_IN+'flex:1.4" oninput="syncDbhRows()">'
-    +'<button type="button" class="btn-sm" title="Remove this size" onclick="removeDbhRow(this)">&#10005;</button></div>';
+    +'<button type="button" class="btn-sm" title="Remove this size" onclick="removeDbhRow(this)">&#10005;</button></div>'
+    +'<input type="text" class="dbhl" maxlength="40" placeholder="what? (optional) e.g. Serbian spruce" style="'+DBH_IN+'margin-top:6px;font-size:13px" oninput="syncDbhRows()"></div>';
 }
 // Trees blank means 1. Writes "8x5, 1x12" into the hidden #dbhIn, which parseDbh reads.
 function syncDbhRows(){
@@ -1068,6 +1105,15 @@ function syncDbhRows(){
   updateTotalsPreview();
 }
 if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', resetDbhRows); else setTimeout(resetDbhRows, 0);
+// What is on the screen, row by row: [{c: trees, d: inches each, label}]
+function dbhRowsDetail(){
+  var out = [];
+  document.querySelectorAll('#dbhRows .dbh-row').forEach(function(r){
+    var d = parseFloat(r.querySelector('.dbhd').value), c = parseInt(r.querySelector('.dbhc').value, 10) || 1;
+    if(d > 0) out.push({c:c, d:d, label:(r.querySelector('.dbhl').value || '').trim()});
+  });
+  return out;
+}
 function addDbhRow(){ var box = document.getElementById('dbhRows'); if(box) box.insertAdjacentHTML('beforeend', dbhRowHtml()); }
 function removeDbhRow(btn){
   var row = btn.closest('.dbh-row'), box = document.getElementById('dbhRows');
@@ -1126,13 +1172,78 @@ function onProdSwap(pi, el){
   syncDbhBox();
   updateTotalsPreview();
 }
-function syncDbhBox(){
-  var svc=document.getElementById('sSel').value, d=SV[svc], dbhFld=document.getElementById('dbhFld');
-  if(!dbhFld || !d) return;
-  var needsDbh=svcNeedsDbh(d);
-  dbhFld.style.display = needsDbh ? 'block' : 'none';
-  if(!needsDbh){ var di=document.getElementById('dbhIn'); if(di){di.value='';di.style.borderColor='';resetDbhRows();} }
+var TANK_GAL = 4;
+function setTanks(n){ var g=document.getElementById('galIn'); if(g){ g.value = String(n*TANK_GAL); updateTotalsPreview(); } }
+function currentGallons(){
+  var f=document.getElementById('galFld'), el=document.getElementById('galIn');
+  if(!f || !el || f.style.display==='none') return '';
+  var v=parseFloat(el.value); return v>0 ? String(Math.round(v*100)/100) : '';
 }
+// Gallons box only for tree & shrub services whose product is dosed by the gallon of mix.
+function svcNeedsGallons(svc, d){
+  return getSvcCat(svc)==='phc' && !!(d && d.products && d.products.some(function(p, pi){ return hasGalRate(effProduct(p, pi).rate); }));
+}
+// What FieldPro knows about this customer's trees (from the link): [{c,d,label}], usual gallons, when measured.
+var savedTrees = [], savedGal = 0, savedMeasured = '', savedFor = '';
+function parseSavedTrees(str){
+  return String(str||'').split('|').map(function(x){
+    var m = x.match(/^(\d+)x([0-9.]+)(?:~(.*))?$/);
+    return m ? {c:parseInt(m[1],10), d:parseFloat(m[2]), label:(m[3]||'').trim()} : null;
+  }).filter(Boolean);
+}
+function savedAgeNote(){
+  if(!savedMeasured) return '';
+  var t = Date.parse(savedMeasured); if(isNaN(t)) return '';
+  var months = Math.round((Date.now()-t)/2629800000);
+  var when = new Date(t).toLocaleDateString('en-US',{month:'short',year:'numeric'});
+  return months >= 12 ? ' \u2014 measured '+when+', over a year ago: check the sizes' : ' (measured '+when+')';
+}
+function fillSavedTrees(){
+  var box = document.getElementById('dbhSaved'); if(!box) return;
+  var cust = document.getElementById('cSel').value;
+  if(!savedTrees.length || savedFor !== cust){ box.textContent=''; return; }
+  var rows = document.querySelectorAll('#dbhRows .dbh-row'), empty = true;
+  rows.forEach(function(r){ if(r.querySelector('.dbhd').value) empty = false; });
+  if(empty){
+    resetDbhRows();
+    savedTrees.forEach(function(t, i){
+      if(i > 0) addDbhRow();
+      var r = document.querySelectorAll('#dbhRows .dbh-row')[i];
+      r.querySelector('.dbhc').value = t.c > 1 ? t.c : '';
+      r.querySelector('.dbhd').value = t.d;
+      r.querySelector('.dbhl').value = t.label;
+    });
+    syncDbhRows();
+  }
+  box.textContent = 'Filled in from FieldPro' + savedAgeNote() + '. Change the number of trees to what you treated today.';
+  box.style.color = /over a year/.test(box.textContent) ? 'var(--ylw, #d29922)' : 'var(--grn)';
+}
+function fillSavedGal(){
+  var g=document.getElementById('galIn'), h=document.getElementById('galHint'); if(!g || !h) return;
+  var cust = document.getElementById('cSel').value;
+  if(savedGal > 0 && savedFor === cust){
+    if(!g.value) g.value = String(savedGal);
+    h.textContent = 'Usual for this property: ' + savedGal + ' gal. Change it to what went through the backpack today.';
+  } else h.textContent = 'Pour it in the tank, note the gallons used. The amount of product comes from the mix rate.';
+}
+function syncMeasureBoxes(){
+  var svc=document.getElementById('sSel').value, d=SV[svc];
+  var dbhFld=document.getElementById('dbhFld'), galFld=document.getElementById('galFld');
+  if(!d) return;
+  if(dbhFld){
+    var needsDbh=svcNeedsDbh(d);
+    dbhFld.style.display = needsDbh ? 'block' : 'none';
+    if(!needsDbh){ var di=document.getElementById('dbhIn'); if(di){di.value='';di.style.borderColor='';resetDbhRows();} var sv=document.getElementById('dbhSaved'); if(sv) sv.textContent=''; }
+    else fillSavedTrees();
+  }
+  if(galFld){
+    var needsGal=svcNeedsGallons(svc,d);
+    galFld.style.display = needsGal ? 'block' : 'none';
+    if(!needsGal){ var gi=document.getElementById('galIn'); if(gi) gi.value=''; }
+    else fillSavedGal();
+  }
+}
+function syncDbhBox(){ syncMeasureBoxes(); }
 // The line as it will be recorded: the swapped-in product if one was chosen,
 // otherwise the service's own. Spot vs full lawn always comes from the
 // service, since that is how the round is run, not a property of the jug.
@@ -1253,7 +1364,7 @@ function updateTotalsPreview() {
     var cn=document.getElementById('cSel');
     if(!sqFt&&cn&&cn.value) sqFt=getCustSq(cn.value,cat)||'';
   }
-  if(!sqFt){box.style.display='none';return;}
+  if(!sqFt && !currentGallons()){box.style.display='none';return;}
   var d=SV[svc];
   var spotSqFtPrev=currentSpotSqFt();
   var dbhPrev=currentDbh();
@@ -1266,7 +1377,7 @@ function updateTotalsPreview() {
     var mx=calcMixed(p.rate,useSq);
     if(!g&&!mx) return;
     any=true;
-    var note=isDbhRate(p.rate)?(' ('+dbhPrev+' in DBH)'):((spotSqFtPrev&&isSpotProduct(p))?' (spot)':'');
+    var note=isDbhRate(p.rate)?(' ('+dbhPrev+' in DBH)'):(String(useSq).indexOf('g:')===0?(' ('+String(useSq).slice(2)+' gal)'):((spotSqFtPrev&&isSpotProduct(p))?' (spot)':''));
     var nm=(d.products.length>1?p.product:'Total used')+note;
     if(g){
       var ov=amtOverride[pi];
@@ -1777,12 +1888,7 @@ function onSvc(){clearAmtOverrides();clearProdSwap();var s=document.getElementBy
     sprayMode='full';
   }
   showSqForCat(custName, cat);
-  var dbhFld=document.getElementById('dbhFld');
-  if(dbhFld){
-    var needsDbh=svcNeedsDbh(svcDef);
-    dbhFld.style.display = needsDbh ? 'block' : 'none';
-    if(!needsDbh){ var di=document.getElementById('dbhIn'); if(di){di.value='';di.style.borderColor='';resetDbhRows();} }
-  }
+  syncMeasureBoxes();
   updateCapNote();
   updateTotalsPreview();}
 function addEntry(){var cust=document.getElementById('cSel').value;var svc=document.getElementById('sSel').value;if(!cust){toast('⚠ Select a customer');return;}if(!svc){toast('⚠ Select a service');return;}clock();var d=SV[svc];var svcCat=getSvcCat(svc);
@@ -1866,14 +1972,14 @@ function addEntry(){var cust=document.getElementById('cSel').value;var svc=docum
     toast('⚠ Over the '+CAP_PER_YEAR+'-per-year blanket 2,4-D cap for this site');
   }
   var tu=totals.some(Boolean)?totals.map(function(t){return t||'—';}).join(' + '):'';
-  var mixed=eff.map(function(p,pi){return calcMixed(p.rate,svcSq[pi]);}).filter(Boolean);var entry={id:Date.now(),customer:cust,service:svc,date:document.getElementById('aDate').textContent,time:document.getElementById('aTime').textContent,sqFt:sqFt,spotSqFt:spotSqFt,totalUsed:tu,weather:document.getElementById('wxC').value,temp:wxTemp?(wxTemp+'°F'):'',wind:document.getElementById('wxW').value,product:combined.product,activeIng:combined.activeIng,epa:combined.epa,rate:combined.rate,totalMixed:(mixed.length?mixed.join(' + '):combined.totalMixed),method:combined.method,targetPest:combined.targetPest,appSite:appSite,dbhIn:dbhIn||'',siteAddress:(enteredSiteAddress()||siteAddressFor(cust)),notes:(function(){var n=userN?d.notes+' | '+userN:d.notes; if(!dbhIn) return n; var dl=currentDbhDetail().list, g=[], gi={}; dl.forEach(function(x){ if(gi[x]===undefined){ gi[x]=g.length; g.push([x,0]); } g[gi[x]][1]++; }); return n+' | DBH treated: '+dbhIn+' in'+(dl.length>1?' ('+dl.length+' trees: '+g.map(function(a){ return a[1]>1?a[1]+' x '+a[0]:a[0]; }).join(' + ')+')':'');})(),synced:false};queue.push(entry);saveQ();renderLog();syncEntry(entry);clearAmtOverrides();clearProdSwap();clearSiteAddr();toast('✓ Added to log');document.getElementById('cSel').value='';document.getElementById('sSel').value='';['sqLawn','sqPHC','sqPest','sqAquatic'].forEach(function(id){
+  var mixed=eff.map(function(p,pi){return calcMixed(p.rate,svcSq[pi]);}).filter(Boolean);var entry={id:Date.now(),customer:cust,service:svc,date:document.getElementById('aDate').textContent,time:document.getElementById('aTime').textContent,sqFt:sqFt,spotSqFt:spotSqFt,totalUsed:tu,weather:document.getElementById('wxC').value,temp:wxTemp?(wxTemp+'°F'):'',wind:document.getElementById('wxW').value,product:combined.product,activeIng:combined.activeIng,epa:combined.epa,rate:combined.rate,totalMixed:(mixed.length?mixed.join(' + '):combined.totalMixed),method:combined.method,targetPest:combined.targetPest,appSite:appSite,dbhIn:dbhIn||'',siteAddress:(enteredSiteAddress()||siteAddressFor(cust)),notes:(function(){var n=userN?d.notes+' | '+userN:d.notes; var gl=currentGallons(); if(gl) n+=' | Gallons sprayed: '+gl; if(!dbhIn) return n; var rd=dbhRowsDetail(), cnt=rd.reduce(function(a,x){return a+x.c;},0), lab=rd.some(function(x){return x.label;}); return n+' | DBH treated: '+dbhIn+' in'+((cnt>1||lab)?' ('+cnt+(cnt===1?' tree: ':' trees: ')+rd.map(function(x){ return (x.c>1?x.c+' x '+x.d:String(x.d))+(x.label?' '+x.label:''); }).join(' + ')+')':'');})(),synced:false};queue.push(entry);saveQ();renderLog();syncEntry(entry);clearAmtOverrides();clearProdSwap();clearSiteAddr();toast('✓ Added to log');document.getElementById('cSel').value='';document.getElementById('sSel').value='';['sqLawn','sqPHC','sqPest','sqAquatic'].forEach(function(id){
     var el=document.getElementById(id);
     if(el){el.value='';el.style.cssText='';}
   });
   hideSqFlds();
   showSprayToggle(false);
   sprayMode='full';
-  var sp=document.getElementById('spotSqIn');if(sp){sp.value='';sp.style.borderColor='';}var db=document.getElementById('dbhIn');if(db){db.value='';db.style.borderColor='';}resetDbhRows();var dbf=document.getElementById('dbhFld');if(dbf)dbf.style.display='none';
+  var sp=document.getElementById('spotSqIn');if(sp){sp.value='';sp.style.borderColor='';}var db=document.getElementById('dbhIn');if(db){db.value='';db.style.borderColor='';}resetDbhRows();var gi2=document.getElementById('galIn');if(gi2)gi2.value='';var gf2=document.getElementById('galFld');if(gf2)gf2.style.display='none';var dbf=document.getElementById('dbhFld');if(dbf)dbf.style.display='none';
   var ot=document.getElementById('onetimeSqIn');if(ot) ot.value='';
   var otf=document.getElementById('onetimeSqFld');if(otf) otf.style.display='none';
   document.getElementById('siteOv').value='';

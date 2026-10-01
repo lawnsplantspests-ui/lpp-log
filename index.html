@@ -235,9 +235,11 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans)}
   </div>
   <!-- Trunk diameter, for products dosed per inch of DBH rather than per area -->
   <div class="fld" id="dbhFld" style="display:none">
-    <label>TRUNK DIAMETER <small>&mdash; one number per tree treated today: 12, 14 &nbsp;or&nbsp; 8 x 12 for eight trees of 12 in</small></label>
-    <input type="text" inputmode="decimal" id="dbhIn" placeholder="e.g. 14    12, 14    8 x 12" autocomplete="off" oninput="updateTotalsPreview()">
-    <div id="dbhHint" style="font-size:12px;color:var(--text-dim);margin-top:4px"></div>
+    <label>TRUNK DIAMETER <small>&mdash; trees treated today &times; inches across each. Tap + for a different size</small></label>
+    <input type="hidden" id="dbhIn" value="">
+    <div id="dbhRows"></div>
+    <button type="button" class="btn-sm" style="margin-top:6px" onclick="addDbhRow()">+ another size</button>
+    <div id="dbhHint" style="font-size:12px;color:var(--text-dim);margin-top:6px"></div>
   </div>
   <!-- One-time sq ft for services that don't save sq ft (yellow jackets, mosquito, bare ground spot etc.) -->
   <div class="fld" id="onetimeSqFld" style="display:none">
@@ -1044,6 +1046,33 @@ function areaForProduct(p, sqFt, spotSqFt, dbhIn){
 }
 // The DBH box, read off its wrapper the same way the spot area is.
 // "12, 14" = two trees. "8 x 12" = eight trees of 12 in. Mix them: "6 x 12, 2 x 15".
+var DBH_IN = 'width:100%;border:1px solid var(--bdr);border-radius:8px;padding:9px 10px;background:var(--sur2);';
+function dbhRowHtml(){
+  return '<div class="dbh-row" style="display:flex;gap:8px;align-items:center;margin-top:6px">'
+    +'<input type="number" class="dbhc" inputmode="numeric" min="1" step="1" placeholder="trees" style="'+DBH_IN+'flex:1" oninput="syncDbhRows()">'
+    +'<span style="color:var(--dim)">&times;</span>'
+    +'<input type="number" class="dbhd" inputmode="decimal" min="0" step="0.5" placeholder="inches each" style="'+DBH_IN+'flex:1.4" oninput="syncDbhRows()">'
+    +'<button type="button" class="btn-sm" title="Remove this size" onclick="removeDbhRow(this)">&#10005;</button></div>';
+}
+// Trees blank means 1. Writes "8x5, 1x12" into the hidden #dbhIn, which parseDbh reads.
+function syncDbhRows(){
+  var parts = [];
+  document.querySelectorAll('#dbhRows .dbh-row').forEach(function(r){
+    var d = parseFloat(r.querySelector('.dbhd').value), c = parseInt(r.querySelector('.dbhc').value, 10) || 1;
+    if(d > 0) parts.push(c > 1 ? c + 'x' + d : String(d));
+  });
+  var el = document.getElementById('dbhIn'); if(el) el.value = parts.join(', ');
+  var fld = document.getElementById('dbhFld'); if(fld) fld.style.borderColor = '';
+  updateTotalsPreview();
+}
+if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', resetDbhRows); else setTimeout(resetDbhRows, 0);
+function addDbhRow(){ var box = document.getElementById('dbhRows'); if(box) box.insertAdjacentHTML('beforeend', dbhRowHtml()); }
+function removeDbhRow(btn){
+  var row = btn.closest('.dbh-row'), box = document.getElementById('dbhRows');
+  if(box && box.querySelectorAll('.dbh-row').length > 1) row.remove(); else { row.querySelector('.dbhc').value=''; row.querySelector('.dbhd').value=''; }
+  syncDbhRows();
+}
+function resetDbhRows(){ var box = document.getElementById('dbhRows'); if(box) box.innerHTML = dbhRowHtml(); var el = document.getElementById('dbhIn'); if(el) el.value = ''; }
 function parseDbh(str){
   var t = String(str||'').toLowerCase().replace(/(\d+(?:\.\d+)?)\s*[x\u00d7*]\s*(\d+(?:\.\d+)?)/g, function(m, n, d){
     var c = Math.min(Math.round(parseFloat(n)), 200), out = [];
@@ -1094,7 +1123,7 @@ function syncDbhBox(){
   if(!dbhFld || !d) return;
   var needsDbh=svcNeedsDbh(d);
   dbhFld.style.display = needsDbh ? 'block' : 'none';
-  if(!needsDbh){ var di=document.getElementById('dbhIn'); if(di){di.value='';di.style.borderColor='';} }
+  if(!needsDbh){ var di=document.getElementById('dbhIn'); if(di){di.value='';di.style.borderColor='';resetDbhRows();} }
 }
 // The line as it will be recorded: the swapped-in product if one was chosen,
 // otherwise the service's own. Spot vs full lawn always comes from the
@@ -1744,7 +1773,7 @@ function onSvc(){clearAmtOverrides();clearProdSwap();var s=document.getElementBy
   if(dbhFld){
     var needsDbh=svcNeedsDbh(svcDef);
     dbhFld.style.display = needsDbh ? 'block' : 'none';
-    if(!needsDbh){ var di=document.getElementById('dbhIn'); if(di){di.value='';di.style.borderColor='';} }
+    if(!needsDbh){ var di=document.getElementById('dbhIn'); if(di){di.value='';di.style.borderColor='';resetDbhRows();} }
   }
   updateCapNote();
   updateTotalsPreview();}
@@ -1798,8 +1827,8 @@ function addEntry(){var cust=document.getElementById('cSel').value;var svc=docum
   if(svcNeedsDbh(d) && !dbhIn){
     var df=document.getElementById('dbhFld');
     if(df) df.style.display='block';
-    var di=document.getElementById('dbhIn');
-    if(di){di.style.borderColor='var(--red)';di.focus();}
+    if(df) df.style.borderColor='var(--red)';
+    var di=document.querySelector('#dbhRows .dbhd'); if(di) di.focus();
     toast('⚠ Trunk diameter (DBH inches) is required');
     return;
   }
@@ -1836,7 +1865,7 @@ function addEntry(){var cust=document.getElementById('cSel').value;var svc=docum
   hideSqFlds();
   showSprayToggle(false);
   sprayMode='full';
-  var sp=document.getElementById('spotSqIn');if(sp){sp.value='';sp.style.borderColor='';}var db=document.getElementById('dbhIn');if(db){db.value='';db.style.borderColor='';}var dbf=document.getElementById('dbhFld');if(dbf)dbf.style.display='none';
+  var sp=document.getElementById('spotSqIn');if(sp){sp.value='';sp.style.borderColor='';}var db=document.getElementById('dbhIn');if(db){db.value='';db.style.borderColor='';}resetDbhRows();var dbf=document.getElementById('dbhFld');if(dbf)dbf.style.display='none';
   var ot=document.getElementById('onetimeSqIn');if(ot) ot.value='';
   var otf=document.getElementById('onetimeSqFld');if(otf) otf.style.display='none';
   document.getElementById('siteOv').value='';

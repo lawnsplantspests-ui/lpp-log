@@ -658,6 +658,17 @@ var loadedTabs = (function(){
   delete t[getTabName(new Date())];
   return t;
 })();
+(function(){
+  try {
+    if(localStorage.getItem('pda_time_fix_v1')) return;
+    archive.forEach(function(d){ d.entries = (d.entries||[]).filter(function(e){ return String(e.id).indexOf('sh_') !== 0; }); });
+    archive = archive.filter(function(d){ return d.entries.length; });
+    saveA();
+    loadedTabs = {};
+    localStorage.setItem('pda_loaded_tabs', '{}');
+    localStorage.setItem('pda_time_fix_v1', '1');
+  } catch(e){ console.warn('time fix migration failed', e); }
+})();
 function saveLoadedTabs(){
   try { localStorage.setItem('pda_loaded_tabs', JSON.stringify(loadedTabs)); } catch(e){}
 }
@@ -767,6 +778,14 @@ function blanket24DCount(cust){
 }
 
 // Fetch a specific month tab from Sheets and merge into archive
+var SHEET_TIME_SHIFT_H = 5;
+function fixSheetTime(t){
+  var m = String(t||'').trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if(!m) return t;
+  var h = (parseInt(m[1],10) % 12) + (m[3].toUpperCase()==='PM' ? 12 : 0);
+  h = ((h - SHEET_TIME_SHIFT_H) % 24 + 24) % 24;
+  return ((h % 12) || 12) + ':' + m[2] + ' ' + (h >= 12 ? 'PM' : 'AM');
+}
 function loadTabFromSheets(tab, callback, quiet){
   if(loadedTabs[tab]){
     if(callback) callback();
@@ -786,6 +805,7 @@ function loadTabFromSheets(tab, callback, quiet){
           // Normalize date to MM/DD/YYYY
           entry.date = normalizeDate(entry.date);
           if(!entry.date) return;
+          if(!r.timeFixed) entry.time = fixSheetTime(entry.time);
                     if(!byDate[entry.date]) byDate[entry.date] = [];
           byDate[entry.date].push(entry);
         });
@@ -1187,8 +1207,8 @@ function svcNeedsGallons(svc, d){
 var savedTrees = [], savedGal = 0, savedMeasured = '', savedFor = '';
 function parseSavedTrees(str){
   return String(str||'').split('|').map(function(x){
-    var m = x.match(/^(\d+)x([0-9.]+)(?:~(.*))?$/);
-    return m ? {c:parseInt(m[1],10), d:parseFloat(m[2]), label:(m[3]||'').trim()} : null;
+    var m = x.match(/^(\d+)x([0-9.]+)(?:~([^~]*))?(?:~(sp|fo))?$/);
+    return m ? {c:parseInt(m[1],10), d:parseFloat(m[2]), label:(m[3]||'').trim(), feed:m[4]||''} : null;
   }).filter(Boolean);
 }
 function savedAgeNote(){
@@ -1204,9 +1224,14 @@ function fillSavedTrees(){
   if(!savedTrees.length || savedFor !== cust){ box.textContent=''; return; }
   var rows = document.querySelectorAll('#dbhRows .dbh-row'), empty = true;
   rows.forEach(function(r){ if(r.querySelector('.dbhd').value) empty = false; });
+  // Spikes only go on the trees that cannot be foliar sprayed: leave the BioRush ones out of a spike entry.
+  var d0 = SV[document.getElementById('sSel').value];
+  var spikeSvc = !!(d0 && d0.products && d0.products.some(function(p, pi){ return /spike/i.test(effProduct(p, pi).totalMixed || ''); }));
+  var use = savedTrees.filter(function(t){ return !(spikeSvc && t.feed === 'fo'); });
+  var left = savedTrees.filter(function(t){ return spikeSvc && t.feed === 'fo'; });
   if(empty){
     resetDbhRows();
-    savedTrees.forEach(function(t, i){
+    use.forEach(function(t, i){
       if(i > 0) addDbhRow();
       var r = document.querySelectorAll('#dbhRows .dbh-row')[i];
       r.querySelector('.dbhc').value = t.c > 1 ? t.c : '';
@@ -1215,7 +1240,8 @@ function fillSavedTrees(){
     });
     syncDbhRows();
   }
-  box.textContent = 'Filled in from FieldPro' + savedAgeNote() + '. Change the number of trees to what you treated today.';
+  box.textContent = 'Filled in from FieldPro' + savedAgeNote() + '. Change the number of trees to what you treated today.'
+    + (left.length ? ' Left out (BioRush foliar): ' + left.map(function(t){ return t.c + ' x ' + (t.label || t.d + ' in'); }).join(', ') + '.' : '');
   box.style.color = /over a year/.test(box.textContent) ? 'var(--ylw, #d29922)' : 'var(--grn)';
 }
 function fillSavedGal(){

@@ -962,8 +962,10 @@ function isDbhRate(rate){
   return !skipRate(r) && !!prodPerInch(r);
 }
 function svcNeedsDbh(d){
-  return !!(d && d.products && d.products.some(function(p){ return isDbhRate(p.rate); }));
+  return !!(d && d.products && d.products.some(function(p, pi){ return isDbhRate(effProduct(p, pi).rate); }));
 }
+// "Pick the product" services (tree & shrub rounds 3-5) carry a placeholder product that must be swapped before it can be logged.
+function isPickProduct(p){ return /^\(pick/i.test(String(p && p.product || '')); }
 function skipRate(r){
   return r.indexOf('record')>=0 || r.indexOf('per void')>=0 || r.indexOf('direct')>=0;
 }
@@ -1054,7 +1056,15 @@ function onProdSwap(pi, el){
   var v = el.value;
   if(!v) delete prodSwap[pi]; else prodSwap[pi] = v;
   delete amtOverride[pi];   // the old amount belonged to the old product
+  syncDbhBox();
   updateTotalsPreview();
+}
+function syncDbhBox(){
+  var svc=document.getElementById('sSel').value, d=SV[svc], dbhFld=document.getElementById('dbhFld');
+  if(!dbhFld || !d) return;
+  var needsDbh=svcNeedsDbh(d);
+  dbhFld.style.display = needsDbh ? 'block' : 'none';
+  if(!needsDbh){ var di=document.getElementById('dbhIn'); if(di){di.value='';di.style.borderColor='';} }
 }
 // The line as it will be recorded: the swapped-in product if one was chosen,
 // otherwise the service's own. Spot vs full lawn always comes from the
@@ -1118,7 +1128,7 @@ function swapOptions(pi, current){
   var lib = (typeof productLib!=='undefined' && productLib) ? productLib.slice() : [];
   lib.sort(function(a,b){ return String(a.product||'').toLowerCase()<String(b.product||'').toLowerCase()?-1:1; });
   var sel = prodSwap[pi] || '';
-  var out = '<option value="">'+String(current).replace(/&/g,'&amp;').replace(/</g,'&lt;')+' (on this service)</option>';
+  var out = '<option value="">'+(/^\(pick/i.test(String(current)) ? '— Pick the product used —' : String(current).replace(/&/g,'&amp;').replace(/</g,'&lt;')+' (on this service)')+'</option>';
   for(var i=0;i<lib.length;i++){
     var n = String(lib[i].product||'');
     if(!n || n===current) continue;
@@ -1741,6 +1751,9 @@ function addEntry(){var cust=document.getElementById('cSel').value;var svc=docum
       renderCusts();
     }
   }
+
+  var unpicked = d.products.some(function(p, pi){ return isPickProduct(p) && !prodSwap[pi]; });
+  if(unpicked){ toast('⚠ Pick the product used for this round (the box under Total used)'); return; }
 
   // Blanket or spot has to be on the record - 7 Pa. Code 128.35 wants the area
   // actually treated, and the herbicide's label cap counts broadcast passes.

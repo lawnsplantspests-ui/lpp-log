@@ -1193,7 +1193,7 @@ function parseSavedTrees(str){
 }
 function savedAgeNote(){
   if(!savedMeasured) return '';
-  var t = Date.parse(savedMeasured); if(isNaN(t)) return '';
+  var t = Date.parse(savedMeasured + 'T12:00:00'); if(isNaN(t)) return '';
   var months = Math.round((Date.now()-t)/2629800000);
   var when = new Date(t).toLocaleDateString('en-US',{month:'short',year:'numeric'});
   return months >= 12 ? ' \u2014 measured '+when+', over a year ago: check the sizes' : ' (measured '+when+')';

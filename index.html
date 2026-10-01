@@ -235,8 +235,8 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans)}
   </div>
   <!-- Trunk diameter, for products dosed per inch of DBH rather than per area -->
   <div class="fld" id="dbhFld" style="display:none">
-    <label>TRUNK DIAMETER <small>&mdash; one number per tree treated today, e.g. 12, 14. Dose is per inch</small></label>
-    <input type="text" inputmode="decimal" id="dbhIn" placeholder="e.g. 14   or   12, 14, 10" autocomplete="off" oninput="updateTotalsPreview()">
+    <label>TRUNK DIAMETER <small>&mdash; one number per tree treated today: 12, 14 &nbsp;or&nbsp; 8 x 12 for eight trees of 12 in</small></label>
+    <input type="text" inputmode="decimal" id="dbhIn" placeholder="e.g. 14    12, 14    8 x 12" autocomplete="off" oninput="updateTotalsPreview()">
     <div id="dbhHint" style="font-size:12px;color:var(--text-dim);margin-top:4px"></div>
   </div>
   <!-- One-time sq ft for services that don't save sq ft (yellow jackets, mosquito, bare ground spot etc.) -->
@@ -1043,8 +1043,14 @@ function areaForProduct(p, sqFt, spotSqFt, dbhIn){
   return (spotSqFt && isSpotProduct(p)) ? spotSqFt : sqFt;
 }
 // The DBH box, read off its wrapper the same way the spot area is.
+// "12, 14" = two trees. "8 x 12" = eight trees of 12 in. Mix them: "6 x 12, 2 x 15".
 function parseDbh(str){
-  var list = String(str||'').split(/[\s,;+&]+/).map(parseFloat).filter(function(n){ return n > 0; });
+  var t = String(str||'').toLowerCase().replace(/(\d+(?:\.\d+)?)\s*[x\u00d7*]\s*(\d+(?:\.\d+)?)/g, function(m, n, d){
+    var c = Math.min(Math.round(parseFloat(n)), 200), out = [];
+    for(var i=0;i<c;i++) out.push(d);
+    return out.join(' ');
+  });
+  var list = t.split(/[\s,;+&]+/).map(parseFloat).filter(function(n){ return n > 0; });
   var total = list.reduce(function(a, n){ return a + n; }, 0);
   return {list:list, total:Math.round(total*100)/100};
 }
@@ -1823,7 +1829,7 @@ function addEntry(){var cust=document.getElementById('cSel').value;var svc=docum
     toast('⚠ Over the '+CAP_PER_YEAR+'-per-year blanket 2,4-D cap for this site');
   }
   var tu=totals.some(Boolean)?totals.map(function(t){return t||'—';}).join(' + '):'';
-  var mixed=eff.map(function(p,pi){return calcMixed(p.rate,svcSq[pi]);}).filter(Boolean);var entry={id:Date.now(),customer:cust,service:svc,date:document.getElementById('aDate').textContent,time:document.getElementById('aTime').textContent,sqFt:sqFt,spotSqFt:spotSqFt,totalUsed:tu,weather:document.getElementById('wxC').value,temp:wxTemp?(wxTemp+'°F'):'',wind:document.getElementById('wxW').value,product:combined.product,activeIng:combined.activeIng,epa:combined.epa,rate:combined.rate,totalMixed:(mixed.length?mixed.join(' + '):combined.totalMixed),method:combined.method,targetPest:combined.targetPest,appSite:appSite,dbhIn:dbhIn||'',siteAddress:(enteredSiteAddress()||siteAddressFor(cust)),notes:(function(){var n=userN?d.notes+' | '+userN:d.notes; if(!dbhIn) return n; var dl=currentDbhDetail().list; return n+' | DBH treated: '+dbhIn+' in'+(dl.length>1?' ('+dl.length+' trees: '+dl.join(' + ')+')':'');})(),synced:false};queue.push(entry);saveQ();renderLog();syncEntry(entry);clearAmtOverrides();clearProdSwap();clearSiteAddr();toast('✓ Added to log');document.getElementById('cSel').value='';document.getElementById('sSel').value='';['sqLawn','sqPHC','sqPest','sqAquatic'].forEach(function(id){
+  var mixed=eff.map(function(p,pi){return calcMixed(p.rate,svcSq[pi]);}).filter(Boolean);var entry={id:Date.now(),customer:cust,service:svc,date:document.getElementById('aDate').textContent,time:document.getElementById('aTime').textContent,sqFt:sqFt,spotSqFt:spotSqFt,totalUsed:tu,weather:document.getElementById('wxC').value,temp:wxTemp?(wxTemp+'°F'):'',wind:document.getElementById('wxW').value,product:combined.product,activeIng:combined.activeIng,epa:combined.epa,rate:combined.rate,totalMixed:(mixed.length?mixed.join(' + '):combined.totalMixed),method:combined.method,targetPest:combined.targetPest,appSite:appSite,dbhIn:dbhIn||'',siteAddress:(enteredSiteAddress()||siteAddressFor(cust)),notes:(function(){var n=userN?d.notes+' | '+userN:d.notes; if(!dbhIn) return n; var dl=currentDbhDetail().list, g=[], gi={}; dl.forEach(function(x){ if(gi[x]===undefined){ gi[x]=g.length; g.push([x,0]); } g[gi[x]][1]++; }); return n+' | DBH treated: '+dbhIn+' in'+(dl.length>1?' ('+dl.length+' trees: '+g.map(function(a){ return a[1]>1?a[1]+' x '+a[0]:a[0]; }).join(' + ')+')':'');})(),synced:false};queue.push(entry);saveQ();renderLog();syncEntry(entry);clearAmtOverrides();clearProdSwap();clearSiteAddr();toast('✓ Added to log');document.getElementById('cSel').value='';document.getElementById('sSel').value='';['sqLawn','sqPHC','sqPest','sqAquatic'].forEach(function(id){
     var el=document.getElementById(id);
     if(el){el.value='';el.style.cssText='';}
   });

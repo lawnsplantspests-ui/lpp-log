@@ -782,7 +782,7 @@ function blanket24DCount(cust){
 }
 
 // Fetch a specific month tab from Sheets and merge into archive
-var APP_BUILD = '2026-10-01-e';
+var APP_BUILD = '2026-10-01-f';
 (function(){ setTimeout(function(){ var v=document.getElementById('appVer'); if(v) v.textContent='v'+APP_BUILD; }, 0); })();
 // Is a newer copy of this page on the server than the one this phone is running? Checked on open, when the app comes back to the front, and every 20 minutes.
 function checkForUpdate(){
@@ -2001,6 +2001,7 @@ function onSvc(){clearAmtOverrides();clearProdSwap();var s=document.getElementBy
     sprayMode='full';
   }
   showSqForCat(custName, cat);
+  if(/^Yellow Jackets/i.test(s)){ var ytn=document.getElementById('onetimeSqIn'); if(ytn && !ytn.value) ytn.value='100'; }   // a yellow jacket job is a 100 sq ft nest area
   var gi0=document.getElementById('galIn'); if(gi0) gi0.value='';   // a new service starts with its own gallons, never the last job's
   syncMeasureBoxes();
   updateCapNote();

@@ -664,13 +664,13 @@ var loadedTabs = (function(){
 })();
 (function(){
   try {
-    if(localStorage.getItem('pda_time_fix_v1')) return;
+    if(localStorage.getItem('pda_time_fix_v2')) return;
     archive.forEach(function(d){ d.entries = (d.entries||[]).filter(function(e){ return String(e.id).indexOf('sh_') !== 0; }); });
     archive = archive.filter(function(d){ return d.entries.length; });
     saveA();
     loadedTabs = {};
     localStorage.setItem('pda_loaded_tabs', '{}');
-    localStorage.setItem('pda_time_fix_v1', '1');
+    localStorage.setItem('pda_time_fix_v2', '1');
   } catch(e){ console.warn('time fix migration failed', e); }
 })();
 function saveLoadedTabs(){
@@ -782,7 +782,7 @@ function blanket24DCount(cust){
 }
 
 // Fetch a specific month tab from Sheets and merge into archive
-var APP_BUILD = '2026-10-01-f';
+var APP_BUILD = '2026-10-01-g';
 (function(){ setTimeout(function(){ var v=document.getElementById('appVer'); if(v) v.textContent='v'+APP_BUILD; }, 0); })();
 // Is a newer copy of this page on the server than the one this phone is running? Checked on open, when the app comes back to the front, and every 20 minutes.
 function checkForUpdate(){

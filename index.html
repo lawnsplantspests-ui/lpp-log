@@ -660,6 +660,8 @@ var loadedTabs = (function(){
   var t = {};
   try { t = JSON.parse(localStorage.getItem('pda_loaded_tabs') || '{}') || {}; } catch(e){ t = {}; }
   delete t[getTabName(new Date())];
+  // a month read from the sheet is trusted for an hour; after that it is read again so edits and deletions reach this phone
+  Object.keys(t).forEach(function(k){ if(typeof t[k] !== 'number' || Date.now() - t[k] > 3600000) delete t[k]; });
   return t;
 })();
 (function(){
@@ -814,7 +816,7 @@ function blanket24DCount(cust){
 }
 
 // Fetch a specific month tab from Sheets and merge into archive
-var APP_BUILD = '2026-10-01-i';
+var APP_BUILD = '2026-10-01-j';
 (function(){ setTimeout(function(){ var v=document.getElementById('appVer'); if(v) v.textContent='v'+APP_BUILD; }, 0); })();
 // Is a newer copy of this page on the server than the one this phone is running? Checked on open, when the app comes back to the front, and every 20 minutes.
 function checkForUpdate(){
@@ -851,8 +853,13 @@ function loadTabFromSheets(tab, callback, quiet){
   if(!quiet) setSUI('go','loading '+tab+'…');
   api({action:'getLog', tab:tab},
     function(r){
-      loadedTabs[tab] = true;
+      loadedTabs[tab] = Date.now();
       saveLoadedTabs();
+      // This month's copy on the phone is replaced by what the sheet says now, so a corrected, re-measured or deleted record
+      // never lingers here. (Entries logged on this phone, with their own ids, are left alone.)
+      var pre = 'sh_' + tab + '_';
+      archive.forEach(function(d){ d.entries = (d.entries || []).filter(function(e){ return String(e.id).indexOf(pre) !== 0; }); });
+      archive = archive.filter(function(d){ return d.entries.length; });
       var count = 0;
       if(r.entries && r.entries.length){
         // First group all entries by date
@@ -888,7 +895,7 @@ function loadTabFromSheets(tab, callback, quiet){
         });
 
         var removedDup = dedupeArchive();
-        if(count > 0 || removedDup) saveA();
+        saveA();
       }
       if(!quiet){ setSUI('ok','synced ✓'); toast('✓ Loaded '+count+' entries from '+tab); }
       if(callback) callback();

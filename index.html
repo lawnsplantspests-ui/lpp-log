@@ -678,6 +678,36 @@ function saveLoadedTabs(){
 }
 var availableTabs = []; // list of tab names from Sheets
 
+// The phone keeps its own copy of every day it archives (numeric id) and the same records come back from the sheet (sh_ id),
+// so an archived entry can be on the book twice and every total reads double - an 87% imidacloprid year shows as 174%.
+// Pair each sheet record with the phone's synced copy of it and drop the copy. Unsynced entries are never touched.
+function dedupeArchive(){
+  var removed = 0, norm = function(x){ return String(x == null ? '' : x).trim().toLowerCase(); };
+  var passes = [
+    function(a, b){ return norm(a.customer)===norm(b.customer) && norm(a.service)===norm(b.service) && norm(a.sqFt)===norm(b.sqFt) && norm(a.product)===norm(b.product); },
+    function(a, b){ return norm(a.customer)===norm(b.customer) && norm(a.service)===norm(b.service); }
+  ];
+  archive.forEach(function(day){
+    var sheets = day.entries.filter(function(e){ return String(e.id).indexOf('sh_') === 0; });
+    var locals = day.entries.filter(function(e){ return String(e.id).indexOf('sh_') !== 0 && e.synced; });
+    if(!sheets.length || !locals.length) return;
+    var gone = {}, paired = {};
+    passes.forEach(function(same){
+      sheets.forEach(function(sh){
+        if(paired[sh.id]) return;
+        for(var i = 0; i < locals.length; i++){
+          var l = locals[i];
+          if(gone[l.id]) continue;
+          if(same(sh, l)){ gone[l.id] = true; paired[sh.id] = true; break; }
+        }
+      });
+    });
+    var before = day.entries.length;
+    day.entries = day.entries.filter(function(e){ return !gone[e.id]; });
+    removed += before - day.entries.length;
+  });
+  return removed;
+}
 function restoreArchiveFromSheets(){
   // Normalize any bad dates already in archive
   archive = archive.map(function(day){
@@ -694,6 +724,7 @@ function restoreArchiveFromSheets(){
     });
   });
   archive = Object.keys(merged).map(function(k){ return merged[k]; });
+  dedupeArchive();
   saveA();
   setSUI('go','loading…');
   // Just get the list of available tabs — don't fetch all data yet
@@ -782,7 +813,7 @@ function blanket24DCount(cust){
 }
 
 // Fetch a specific month tab from Sheets and merge into archive
-var APP_BUILD = '2026-10-01-g';
+var APP_BUILD = '2026-10-01-h';
 (function(){ setTimeout(function(){ var v=document.getElementById('appVer'); if(v) v.textContent='v'+APP_BUILD; }, 0); })();
 // Is a newer copy of this page on the server than the one this phone is running? Checked on open, when the app comes back to the front, and every 20 minutes.
 function checkForUpdate(){
@@ -855,7 +886,8 @@ function loadTabFromSheets(tab, callback, quiet){
           }
         });
 
-        if(count > 0) saveA();
+        var removedDup = dedupeArchive();
+        if(count > 0 || removedDup) saveA();
       }
       if(!quiet){ setSUI('ok','synced ✓'); toast('✓ Loaded '+count+' entries from '+tab); }
       if(callback) callback();

@@ -6,7 +6,7 @@ Google does not version it the way GitHub does, so copies are kept here by hand.
 
 | File | What it is |
 |---|---|
-| `lpp-log-backend-v9.gs` | The live backend as of 2026-08-27 |
+| `lpp-log-backend-v10.gs` | The backend as of 2026-10-03 (v9 + getLog returns Job Start / Job End) |
 | `nightly-backup.gs` | Makes a dated copy of the sheet every night |
 
 ## Whenever the Apps Script changes

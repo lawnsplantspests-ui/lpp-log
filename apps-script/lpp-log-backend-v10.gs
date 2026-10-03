@@ -1,6 +1,9 @@
 // ================================================================
-// LPP App Log — Google Apps Script API v9
+// LPP App Log — Google Apps Script API v10
 // Sheet: LPP App Log (1ZLuqBz61IXa5CEQieNQbhTLxH6EJYGmxJiXjeyaswa0)
+//
+// v10 changes (Oct 2026):
+//   - getLog returns Job Start / Job End (the LPP Log's job timer).
 //
 // v9 changes:
 //   - addCustomer / updateCustomer no longer destroy the Address column.
@@ -21,7 +24,7 @@ var SYSTEM_TABS = ['Customers','Services','Products','SyncQueue',
   'FP_Routes','FP_Products'];
 
 function doGet(e) {
-  return json({ status:'ok', message:'LPP API v9 running' });
+  return json({ status:'ok', message:'LPP API v10 running' });
 }
 
 function doPost(e) {
@@ -88,6 +91,8 @@ function doPost(e) {
           notes:       entry['Notes']             || '',
           siteAddress: entry['Site Address']      || '',
           dbhIn:       entry['DBH (in)']          || '',
+          jobStart:    entry['Job Start']         || '',   // job timer (added 10/2/2026)
+          jobEnd:      entry['Job End']           || '',
           synced:      true
         });
       }

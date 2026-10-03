@@ -613,7 +613,7 @@ var DL = (function(){
   try {
     var p = new URLSearchParams(location.search);
     if (!p.get('c')) return null;
-    return { c:p.get('c'), svc:p.get('svc'), rd:p.get('rd'), pfx:p.get('pfx'), not:p.get('not'), tr:p.get('tr'), gal:p.get('gal'), tm:p.get('tm'), done:false };
+    return { c:p.get('c'), svc:p.get('svc'), rd:p.get('rd'), pfx:p.get('pfx'), not:p.get('not'), tr:p.get('tr'), gal:p.get('gal'), tm:p.get('tm'), st:(/^\d{1,3}$/.test(p.get('st')||'') ? parseInt(p.get('st'),10) : 0), done:false };
   } catch(e){ return null; }
 })();
 function applyDeepLink(){
@@ -624,7 +624,7 @@ function applyDeepLink(){
     DL.done=true;
     if(!has(cs,DL.c)){ toast('Warning - from FieldPro: customer "'+DL.c+'" not found'); return; }
     cs.value=DL.c; onCust();
-    savedFor=DL.c; savedTrees=parseSavedTrees(DL.tr); savedGal=parseFloat(DL.gal)||0; savedMeasured=DL.tm||'';
+    savedFor=DL.c; savedTrees=parseSavedTrees(DL.tr); savedGal=parseFloat(DL.gal)||0; savedMeasured=DL.tm||''; savedStations=DL.st||0;
     var pick=null, names=Object.keys(SV);
     if(DL.svc && SV[DL.svc]) pick=DL.svc;
     else if(DL.rd){
@@ -816,7 +816,7 @@ function blanket24DCount(cust){
 }
 
 // Fetch a specific month tab from Sheets and merge into archive
-var APP_BUILD = '2026-10-01-j';
+var APP_BUILD = '2026-10-02-a';
 (function(){ setTimeout(function(){ var v=document.getElementById('appVer'); if(v) v.textContent='v'+APP_BUILD; }, 0); })();
 // Is a newer copy of this page on the server than the one this phone is running? Checked on open, when the app comes back to the front, and every 20 minutes.
 function checkForUpdate(){
@@ -1279,7 +1279,7 @@ function svcNeedsGallons(svc, d){
   return !!(d && d.products && d.products.some(function(p, pi){ var e = effProduct(p, pi); return hasGalRate(e.rate) || /record gal/i.test(e.totalMixed || ''); }));
 }
 // What FieldPro knows about this customer's trees (from the link): [{c,d,label}], usual gallons, when measured.
-var savedTrees = [], savedGal = 0, savedMeasured = '', savedFor = '';
+var savedTrees = [], savedGal = 0, savedMeasured = '', savedFor = '', savedStations = 0;
 function parseSavedTrees(str){
   return String(str||'').split('|').map(function(x){
     var m = x.match(/^(\d+)x([0-9.]+)(?:~([^~]*))?(?:~(sp|fo))?$/);
@@ -1462,11 +1462,20 @@ function updateManualAmts(){
   if(rows.dataset.sig === sig) return;          // same products: leave what is being typed alone
   rows.dataset.sig = sig;
   var h = function(x){ return String(x == null ? '' : x).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'); };
+  // Bait stations: start at the count saved in FieldPro for this customer (only when opened from FieldPro, only this customer)
+  var st = (savedStations > 0 && savedFor === document.getElementById('cSel').value && /^Mosquito\s*-\s*Bait/i.test(svc)) ? savedStations : 0;
   rows.innerHTML = need.map(function(pi){
-    var p = effProduct(d.products[pi], pi), m = manualAmt[pi] || {}, u = m.unit || manualUnitGuess(p);
+    var p = effProduct(d.products[pi], pi), m = manualAmt[pi], hint = '';
+    if(!m && st && manualUnitGuess(p) === 'stations'){
+      m = {n:st, unit:'stations'};
+      hint = '<div class="man-hint" style="font-size:12px;color:var(--grn);margin-top:4px">From FieldPro: ' + st + (st === 1 ? ' station' : ' stations') + ' saved for this property. Change it to what you actually placed today.</div>';
+      st = 0;
+    }
+    m = m || {};
+    var u = m.unit || manualUnitGuess(p);
     return '<div class="man-row" data-pi="'+pi+'" style="margin-top:6px"><div style="font-size:12px;color:var(--dim);margin-bottom:4px">'+h(p.product)+(d.products.length>1?'':'')+'</div>'
       +'<div style="display:flex;gap:8px"><input type="number" class="man-n" inputmode="decimal" min="0" step="any" value="'+h(m.n||'')+'" placeholder="amount used" style="'+DBH_IN+'flex:1.2" oninput="onManualAmt('+pi+')">'
-      +'<select class="man-u" style="'+DBH_IN+'flex:1" onchange="onManualAmt('+pi+')">'+MAN_UNITS.map(function(x){ return '<option'+(x===u?' selected':'')+'>'+x+'</option>'; }).join('')+'</select></div></div>';
+      +'<select class="man-u" style="'+DBH_IN+'flex:1" onchange="onManualAmt('+pi+')">'+MAN_UNITS.map(function(x){ return '<option'+(x===u?' selected':'')+'>'+x+'</option>'; }).join('')+'</select></div>'+hint+'</div>';
   }).join('');
   rows.querySelectorAll('.man-row').forEach(function(r){ onManualAmt(r.getAttribute('data-pi')); });
 }

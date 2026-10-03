@@ -816,7 +816,7 @@ function blanket24DCount(cust){
 }
 
 // Fetch a specific month tab from Sheets and merge into archive
-var APP_BUILD = '2026-10-02-a';
+var APP_BUILD = '2026-10-02-b';
 (function(){ setTimeout(function(){ var v=document.getElementById('appVer'); if(v) v.textContent='v'+APP_BUILD; }, 0); })();
 // Is a newer copy of this page on the server than the one this phone is running? Checked on open, when the app comes back to the front, and every 20 minutes.
 function checkForUpdate(){
@@ -1468,7 +1468,7 @@ function updateManualAmts(){
     var p = effProduct(d.products[pi], pi), m = manualAmt[pi], hint = '';
     if(!m && st && manualUnitGuess(p) === 'stations'){
       m = {n:st, unit:'stations'};
-      hint = '<div class="man-hint" style="font-size:12px;color:var(--grn);margin-top:4px">From FieldPro: ' + st + (st === 1 ? ' station' : ' stations') + ' saved for this property. Change it to what you actually placed today.</div>';
+      hint = '<div class="man-hint" style="font-size:12px;color:var(--grn);margin-top:4px">From FieldPro: ' + st + (st === 1 ? ' station' : ' stations') + ' on the map. Change it to what you actually placed today.</div>';
       st = 0;
     }
     m = m || {};

@@ -818,7 +818,7 @@ function blanket24DCount(cust){
 }
 
 // Fetch a specific month tab from Sheets and merge into archive
-var APP_BUILD = '2026-10-02-c';
+var APP_BUILD = '2026-10-06-a';
 (function(){ setTimeout(function(){ var v=document.getElementById('appVer'); if(v) v.textContent='v'+APP_BUILD; }, 0); })();
 // Is a newer copy of this page on the server than the one this phone is running? Checked on open, when the app comes back to the front, and every 20 minutes.
 function checkForUpdate(){
@@ -1830,6 +1830,14 @@ function jobDone(){
   j.forEach(function(x){ if(x.c === c && !x.end) x.end = Date.now(); });
   saveJobs(j); renderJob();
 }
+// remember which entries a timer's times went into, so a second service at the same customer is shown what it will get
+function jobUsed(c, svc){
+  var j = loadJobs(), x = null;
+  for(var i = j.length - 1; i >= 0; i--){ if(j[i].c === c){ x = j[i]; break; } }
+  if(!x) return;
+  x.used = (x.used || []).concat(String(svc || '').replace(/\s*\(.*$/, ''));
+  saveJobs(j);
+}
 function jobClear(){
   var c = document.getElementById('cSel').value;
   if(!confirm('Clear the timer for ' + c + '?')) return;
@@ -1851,9 +1859,12 @@ function renderJob(){
       + '<div style="color:var(--dim);font-size:12px;margin-top:4px">' + (long ? 'Still running? Tap Done or \u2715. ' : '') + 'The record time will be ' + fmtClock(j.start) + ' (when you started).</div>';
     return;
   }
+  // a finished visit: the next entry gets the same times (two services, one visit) unless Start begins a new visit
+  // (Oct 6 2026: Frank Hill pest at 12:37, back at 4:34 for Rd 6 because he was mowing - there was no way to restart)
+  var used = j.used && j.used.length;
   b.innerHTML = '<span style="color:var(--grn)">\u23f1 ' + fmtJobMins(jobMins(j.start, j.end)) + ' on site, ' + fmtClock(j.start) + '\u2013' + fmtClock(j.end) + '</span>'
-    + btn('\u2715', 'jobClear()')
-    + '<div style="color:var(--dim);font-size:12px;margin-top:4px">Saved with the entry. The record time will be ' + fmtClock(j.start) + '.</div>' + otherTxt;
+    + btn('\u25b6 Start new visit', 'jobStart()') + btn('\u2715', 'jobClear()')
+    + '<div style="color:var(--dim);font-size:12px;margin-top:4px">' + (used ? 'Already saved with ' + h(j.used.join(', ')) + '. Another service from this same visit gets these times too. Came back later? Tap Start new visit.' : 'Saved with the entry. The record time will be ' + fmtClock(j.start) + '.') + '</div>' + otherTxt;
 }
 setInterval(renderJob, 30000);
 function clock(){var n=new Date();document.getElementById('aDate').textContent=n.toLocaleDateString('en-US',{month:'2-digit',day:'2-digit',year:'numeric'});var h=n.getHours(),m=n.getMinutes(),ap=h>=12?'PM':'AM';h=h%12||12;document.getElementById('aTime').textContent=h+':'+(m<10?'0':'')+m+' '+ap;var jt=jobFor((document.getElementById('cSel')||{}).value);if(jt)document.getElementById('aTime').textContent=fmtClock(jt.start);}
@@ -2217,7 +2228,7 @@ function addEntry(){var cust=document.getElementById('cSel').value;var svc=docum
     toast('⚠ Over the '+CAP_PER_YEAR+'-per-year blanket 2,4-D cap for this site');
   }
   var tu=totals.some(Boolean)?totals.map(function(t){return t||'—';}).join(' + '):'';
-  var mixed=eff.map(function(p,pi){var m=calcMixed(p.rate,svcSq[pi]);var gl0=currentGallons();if(!m&&gl0&&/record gal/i.test(p.totalMixed||''))m=fmtAmt(parseFloat(gl0),parseFloat(gl0),'gal',' spray mix');return m;}).filter(Boolean);var entry={id:Date.now(),customer:cust,service:svc,date:document.getElementById('aDate').textContent,time:document.getElementById('aTime').textContent,sqFt:sqFt,spotSqFt:spotSqFt,totalUsed:tu,weather:document.getElementById('wxC').value,temp:wxTemp?(wxTemp+'°F'):'',wind:document.getElementById('wxW').value,product:combined.product,activeIng:combined.activeIng,epa:combined.epa,rate:combined.rate,totalMixed:(mixed.length?mixed.join(' + '):combined.totalMixed),method:combined.method,targetPest:combined.targetPest,appSite:appSite,dbhIn:dbhIn||'',jobStart:jobTimes(cust).s,jobEnd:jobTimes(cust).e,siteAddress:(enteredSiteAddress()||siteAddressFor(cust)),notes:(function(){var n=userN?d.notes+' | '+userN:d.notes; var gl=currentGallons(); if(gl) n+=' | Gallons sprayed: '+gl; if(!dbhIn) return n; var rd=dbhRowsDetail(), cnt=rd.reduce(function(a,x){return a+x.c;},0), lab=rd.some(function(x){return x.label;}); return n+' | DBH treated: '+dbhIn+' in'+((cnt>1||lab)?' ('+cnt+(cnt===1?' tree: ':' trees: ')+rd.map(function(x){ return (x.c>1?x.c+' x '+x.d:String(x.d))+(x.label?' '+x.label:''); }).join(' + ')+')':'');})(),synced:false};queue.push(entry);saveQ();renderLog();syncEntry(entry);clearAmtOverrides();clearProdSwap();clearSiteAddr();toast('✓ Added to log');document.getElementById('cSel').value='';document.getElementById('sSel').value='';['sqLawn','sqPHC','sqPest','sqAquatic'].forEach(function(id){
+  var mixed=eff.map(function(p,pi){var m=calcMixed(p.rate,svcSq[pi]);var gl0=currentGallons();if(!m&&gl0&&/record gal/i.test(p.totalMixed||''))m=fmtAmt(parseFloat(gl0),parseFloat(gl0),'gal',' spray mix');return m;}).filter(Boolean);var entry={id:Date.now(),customer:cust,service:svc,date:document.getElementById('aDate').textContent,time:document.getElementById('aTime').textContent,sqFt:sqFt,spotSqFt:spotSqFt,totalUsed:tu,weather:document.getElementById('wxC').value,temp:wxTemp?(wxTemp+'°F'):'',wind:document.getElementById('wxW').value,product:combined.product,activeIng:combined.activeIng,epa:combined.epa,rate:combined.rate,totalMixed:(mixed.length?mixed.join(' + '):combined.totalMixed),method:combined.method,targetPest:combined.targetPest,appSite:appSite,dbhIn:dbhIn||'',jobStart:jobTimes(cust).s,jobEnd:jobTimes(cust).e,siteAddress:(enteredSiteAddress()||siteAddressFor(cust)),notes:(function(){var n=userN?d.notes+' | '+userN:d.notes; var gl=currentGallons(); if(gl) n+=' | Gallons sprayed: '+gl; if(!dbhIn) return n; var rd=dbhRowsDetail(), cnt=rd.reduce(function(a,x){return a+x.c;},0), lab=rd.some(function(x){return x.label;}); return n+' | DBH treated: '+dbhIn+' in'+((cnt>1||lab)?' ('+cnt+(cnt===1?' tree: ':' trees: ')+rd.map(function(x){ return (x.c>1?x.c+' x '+x.d:String(x.d))+(x.label?' '+x.label:''); }).join(' + ')+')':'');})(),synced:false};queue.push(entry);saveQ();jobUsed(cust,svc);renderLog();syncEntry(entry);clearAmtOverrides();clearProdSwap();clearSiteAddr();toast('✓ Added to log');document.getElementById('cSel').value='';document.getElementById('sSel').value='';['sqLawn','sqPHC','sqPest','sqAquatic'].forEach(function(id){
     var el=document.getElementById(id);
     if(el){el.value='';el.style.cssText='';}
   });

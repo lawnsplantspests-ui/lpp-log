@@ -818,7 +818,7 @@ function blanket24DCount(cust){
 }
 
 // Fetch a specific month tab from Sheets and merge into archive
-var APP_BUILD = '2026-10-06-a';
+var APP_BUILD = '2026-10-07-a';
 (function(){ setTimeout(function(){ var v=document.getElementById('appVer'); if(v) v.textContent='v'+APP_BUILD; }, 0); })();
 // Is a newer copy of this page on the server than the one this phone is running? Checked on open, when the app comes back to the front, and every 20 minutes.
 function checkForUpdate(){
@@ -1812,8 +1812,14 @@ function fmtClock(ms){ var d = new Date(ms), h = d.getHours(), m = d.getMinutes(
 function jobMins(a, b){ return Math.max(0, Math.round((b - a) / 60000)); }
 function fmtJobMins(m){ return m >= 60 ? Math.floor(m / 60) + ' h ' + (m % 60) + ' min' : m + ' min'; }
 // what goes on the record: start, and the finish (Done, or now if still running and not left on for hours)
-function jobTimes(c){
+// A timer whose times already went into an entry at one site address is not reused at another site: the 'Bees'
+// catch-all is one customer with many nest sites (Oct 7 2026: two nests both got the 12:02 start).
+function siteKey(a){ return String(a || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
+function jobOtherSite(j, site){ return !!(j && j.used && j.used.length && j.site && site && siteKey(site) !== siteKey(j.site)); }
+function curSite(c){ return enteredSiteAddress() || siteAddressFor(c) || ''; }
+function jobTimes(c, site){
   var j = jobFor(c); if(!j) return {s:'', e:''};
+  if(jobOtherSite(j, site)) return {s:'', e:''};
   var e = j.end ? fmtClock(j.end) : (jobMins(j.start, Date.now()) < JOB_LONG_MIN ? fmtClock(Date.now()) : '');
   return {s:fmtClock(j.start), e:e};
 }
@@ -1831,11 +1837,13 @@ function jobDone(){
   saveJobs(j); renderJob();
 }
 // remember which entries a timer's times went into, so a second service at the same customer is shown what it will get
-function jobUsed(c, svc){
+function jobUsed(c, svc, site){
   var j = loadJobs(), x = null;
   for(var i = j.length - 1; i >= 0; i--){ if(j[i].c === c){ x = j[i]; break; } }
   if(!x) return;
+  if(jobOtherSite(x, site)) return;   // saved without this timer's times
   x.used = (x.used || []).concat(String(svc || '').replace(/\s*\(.*$/, ''));
+  if(!x.site && site) x.site = site;
   saveJobs(j);
 }
 function jobClear(){
@@ -1852,6 +1860,11 @@ function renderJob(){
   var otherTxt = other ? '<div style="color:var(--dim);font-size:12px;margin-top:4px">Clock running for ' + h(other.c) + ' since ' + fmtClock(other.start) + (c ? ' (Start stops it)' : '') + '</div>' : '';
   if(!c){ b.innerHTML = '<span style="color:var(--dim)">Pick the customer, then Start when you pull in.</span>' + otherTxt; return; }
   if(!j){ b.innerHTML = '<span style="color:var(--dim)">Not timed.</span>' + btn('\u25b6 Start', 'jobStart()') + otherTxt; return; }
+  if(jobOtherSite(j, curSite(c))){
+    b.innerHTML = '<span style="color:var(--ylw, #d29922)">\u23f1 New site</span>' + btn('\u25b6 Start', 'jobStart()')
+      + '<div style="color:var(--dim);font-size:12px;margin-top:4px">The last timer (' + fmtClock(j.start) + '\u2013' + fmtClock(j.end || now) + ') was saved with ' + h(j.site) + '. Tap Start for this site, or this entry is saved without job times.</div>' + otherTxt;
+    return;
+  }
   if(!j.end){
     var m = jobMins(j.start, now), long = m >= JOB_LONG_MIN;
     b.innerHTML = '<span style="color:' + (long ? 'var(--ylw, #d29922)' : 'var(--grn)') + '">\u23f1 ' + fmtJobMins(m) + ' on site, since ' + fmtClock(j.start) + '</span>'
@@ -1867,7 +1880,8 @@ function renderJob(){
     + '<div style="color:var(--dim);font-size:12px;margin-top:4px">' + (used ? 'Already saved with ' + h(j.used.join(', ')) + '. Another service from this same visit gets these times too. Came back later? Tap Start new visit.' : 'Saved with the entry. The record time will be ' + fmtClock(j.start) + '.') + '</div>' + otherTxt;
 }
 setInterval(renderJob, 30000);
-function clock(){var n=new Date();document.getElementById('aDate').textContent=n.toLocaleDateString('en-US',{month:'2-digit',day:'2-digit',year:'numeric'});var h=n.getHours(),m=n.getMinutes(),ap=h>=12?'PM':'AM';h=h%12||12;document.getElementById('aTime').textContent=h+':'+(m<10?'0':'')+m+' '+ap;var jt=jobFor((document.getElementById('cSel')||{}).value);if(jt)document.getElementById('aTime').textContent=fmtClock(jt.start);}
+document.addEventListener('input', function(ev){ if(ev.target && ev.target.id === 'siteAddrIn'){ renderJob(); clock(); } });
+function clock(){var n=new Date();document.getElementById('aDate').textContent=n.toLocaleDateString('en-US',{month:'2-digit',day:'2-digit',year:'numeric'});var h=n.getHours(),m=n.getMinutes(),ap=h>=12?'PM':'AM';h=h%12||12;document.getElementById('aTime').textContent=h+':'+(m<10?'0':'')+m+' '+ap;var cc=(document.getElementById('cSel')||{}).value,jt=jobFor(cc);if(jt&&!jobOtherSite(jt,curSite(cc)))document.getElementById('aTime').textContent=fmtClock(jt.start);}
 function fetchWx(){var pill=document.getElementById('wpill'),st=document.getElementById('wst');pill.className='wpill loading';st.textContent='…';if(!navigator.geolocation){pill.className='wpill warn';st.textContent='No GPS';return;}navigator.geolocation.getCurrentPosition(function(pos){fetch('https://api.open-meteo.com/v1/forecast?latitude='+pos.coords.latitude+'&longitude='+pos.coords.longitude+'&current=temperature_2m,wind_speed_10m,weather_code&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=auto').then(function(r){return r.json();}).then(function(d){var c=d.current;setSel('wxC',c2c(c.weather_code));document.getElementById('wxT').value=Math.round(c.temperature_2m);setSel('wxW',m2d(Math.round(c.wind_speed_10m)));pill.className='wpill live';st.textContent=Math.round(c.temperature_2m)+'°F · '+c2c(c.weather_code);}).catch(function(){pill.className='wpill warn';st.textContent='retry';});},function(){pill.className='wpill warn';st.textContent='GPS off';},{timeout:8000});}
 function c2c(c){if(c===0)return'Clear';if(c<=2)return'Partly Cloudy';if(c===3)return'Overcast';if(c<=48)return'Foggy';if(c<=63)return'Light Rain - Pre';if(c<=82)return'Post Rain';return'Hot / Humid';}
 function m2d(m){if(m<=3)return'Calm (0-3 mph)';if(m<=7)return'Light (4-7 mph)';if(m<=12)return'Moderate (8-12 mph)';return'13+ mph';}
@@ -2228,7 +2242,7 @@ function addEntry(){var cust=document.getElementById('cSel').value;var svc=docum
     toast('⚠ Over the '+CAP_PER_YEAR+'-per-year blanket 2,4-D cap for this site');
   }
   var tu=totals.some(Boolean)?totals.map(function(t){return t||'—';}).join(' + '):'';
-  var mixed=eff.map(function(p,pi){var m=calcMixed(p.rate,svcSq[pi]);var gl0=currentGallons();if(!m&&gl0&&/record gal/i.test(p.totalMixed||''))m=fmtAmt(parseFloat(gl0),parseFloat(gl0),'gal',' spray mix');return m;}).filter(Boolean);var entry={id:Date.now(),customer:cust,service:svc,date:document.getElementById('aDate').textContent,time:document.getElementById('aTime').textContent,sqFt:sqFt,spotSqFt:spotSqFt,totalUsed:tu,weather:document.getElementById('wxC').value,temp:wxTemp?(wxTemp+'°F'):'',wind:document.getElementById('wxW').value,product:combined.product,activeIng:combined.activeIng,epa:combined.epa,rate:combined.rate,totalMixed:(mixed.length?mixed.join(' + '):combined.totalMixed),method:combined.method,targetPest:combined.targetPest,appSite:appSite,dbhIn:dbhIn||'',jobStart:jobTimes(cust).s,jobEnd:jobTimes(cust).e,siteAddress:(enteredSiteAddress()||siteAddressFor(cust)),notes:(function(){var n=userN?d.notes+' | '+userN:d.notes; var gl=currentGallons(); if(gl) n+=' | Gallons sprayed: '+gl; if(!dbhIn) return n; var rd=dbhRowsDetail(), cnt=rd.reduce(function(a,x){return a+x.c;},0), lab=rd.some(function(x){return x.label;}); return n+' | DBH treated: '+dbhIn+' in'+((cnt>1||lab)?' ('+cnt+(cnt===1?' tree: ':' trees: ')+rd.map(function(x){ return (x.c>1?x.c+' x '+x.d:String(x.d))+(x.label?' '+x.label:''); }).join(' + ')+')':'');})(),synced:false};queue.push(entry);saveQ();jobUsed(cust,svc);renderLog();syncEntry(entry);clearAmtOverrides();clearProdSwap();clearSiteAddr();toast('✓ Added to log');document.getElementById('cSel').value='';document.getElementById('sSel').value='';['sqLawn','sqPHC','sqPest','sqAquatic'].forEach(function(id){
+  var mixed=eff.map(function(p,pi){var m=calcMixed(p.rate,svcSq[pi]);var gl0=currentGallons();if(!m&&gl0&&/record gal/i.test(p.totalMixed||''))m=fmtAmt(parseFloat(gl0),parseFloat(gl0),'gal',' spray mix');return m;}).filter(Boolean);var entry={id:Date.now(),customer:cust,service:svc,date:document.getElementById('aDate').textContent,time:document.getElementById('aTime').textContent,sqFt:sqFt,spotSqFt:spotSqFt,totalUsed:tu,weather:document.getElementById('wxC').value,temp:wxTemp?(wxTemp+'°F'):'',wind:document.getElementById('wxW').value,product:combined.product,activeIng:combined.activeIng,epa:combined.epa,rate:combined.rate,totalMixed:(mixed.length?mixed.join(' + '):combined.totalMixed),method:combined.method,targetPest:combined.targetPest,appSite:appSite,dbhIn:dbhIn||'',jobStart:jobTimes(cust,curSite(cust)).s,jobEnd:jobTimes(cust,curSite(cust)).e,siteAddress:(enteredSiteAddress()||siteAddressFor(cust)),notes:(function(){var n=userN?d.notes+' | '+userN:d.notes; var gl=currentGallons(); if(gl) n+=' | Gallons sprayed: '+gl; if(!dbhIn) return n; var rd=dbhRowsDetail(), cnt=rd.reduce(function(a,x){return a+x.c;},0), lab=rd.some(function(x){return x.label;}); return n+' | DBH treated: '+dbhIn+' in'+((cnt>1||lab)?' ('+cnt+(cnt===1?' tree: ':' trees: ')+rd.map(function(x){ return (x.c>1?x.c+' x '+x.d:String(x.d))+(x.label?' '+x.label:''); }).join(' + ')+')':'');})(),synced:false};queue.push(entry);saveQ();jobUsed(cust,svc,entry.siteAddress);renderLog();syncEntry(entry);clearAmtOverrides();clearProdSwap();clearSiteAddr();toast('✓ Added to log');document.getElementById('cSel').value='';document.getElementById('sSel').value='';['sqLawn','sqPHC','sqPest','sqAquatic'].forEach(function(id){
     var el=document.getElementById(id);
     if(el){el.value='';el.style.cssText='';}
   });

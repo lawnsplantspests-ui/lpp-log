@@ -818,7 +818,7 @@ function blanket24DCount(cust){
 }
 
 // Fetch a specific month tab from Sheets and merge into archive
-var APP_BUILD = '2026-10-07-a';
+var APP_BUILD = '2026-10-07-b';
 (function(){ setTimeout(function(){ var v=document.getElementById('appVer'); if(v) v.textContent='v'+APP_BUILD; }, 0); })();
 // Is a newer copy of this page on the server than the one this phone is running? Checked on open, when the app comes back to the front, and every 20 minutes.
 function checkForUpdate(){
@@ -1564,6 +1564,12 @@ function updateTotalsPreview() {
     }
     if(mx) rows.push('<div class="tp-mix">'+(d.products.length>1?esc(p.product)+' - ':'')+esc(mx)+'</div>');
   });
+  // PA fertilizer law (3 Pa.C.S. 6813(b)(3)): Dec 15 - Mar 1 at most 0.5 lb total N per 1,000 sq ft. Devon backs off
+  // Rd 1 to 3 lb/1000 (16-0-3 -> 0.48 lb N) when he starts in February; the amount box records what really went down.
+  if(/Lawn Care - Rd 1\b/.test(svc)){
+    var md=(new Date().getMonth()+1)*100+new Date().getDate();
+    if(md>=1215||md<301) rows.push('<div class="tp-warn">Before March 1: PA law allows at most 0.5 lb nitrogen per 1,000 sq ft. 16-0-3 at 3 lb per 1,000 = 0.48 lb N. Put the amount you actually used in the box above. Not on frozen or snow-covered ground.</div>');
+  }
   if(any){
     vals.innerHTML=rows.join('');
     box.style.display='block';

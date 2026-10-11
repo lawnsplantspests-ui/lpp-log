@@ -190,10 +190,7 @@ function doPost(e) {
 
     // ── SERVICES ───────────────────────────────────────────────
     if (action === 'saveServices') {
-      var sheet = getOrCreate(ss, 'Services');
-      sheet.clearContents();
-      sheet.appendRow(['Key','Value']);
-      sheet.appendRow(['DATA', data.services]);
+      saveServicesJson(ss, String(data.services || ''));
       return json({ status:'ok' });
     }
 
@@ -380,16 +377,48 @@ function getCustomers(ss) {
   return out;
 }
 
+// Services JSON lives in column B of the DATA rows. Google Sheets refuses any
+// cell over 50,000 characters, so once it outgrows B2 it continues in B3, B4 …
+// in pieces of at most SERVICES_CHUNK characters, and reading joins them.
+// While it fits in one cell, B2 is written exactly as it always was.
+// Pieces after the first start with "~" so Sheets keeps them as plain text
+// (one starting with "=", "-" or digits would be turned into a formula or
+// number). FieldPro's backend reads and writes this tab the same way.
+var SERVICES_CHUNK = 40000;
+var SERVICES_MIN_ROWS = 12;
+
 function getServices(ss) {
   var sheet = ss.getSheetByName('Services');
   if(!sheet || sheet.getLastRow()<1) return null;
   var rows = sheet.getDataRange().getValues();
+  var text = '';
   for(var i=0;i<rows.length;i++){
     if(String(rows[i][0]).trim().toUpperCase()==='DATA' && rows[i][1]){
-      try{ return JSON.parse(String(rows[i][1])); }catch(e){ return null; }
+      var piece = String(rows[i][1]);
+      text += piece.charAt(0)==='~' ? piece.slice(1) : piece;
     }
   }
-  return null;
+  if(!text) return null;
+  try{ return JSON.parse(text); }catch(e){ return null; }
+}
+
+function saveServicesJson(ss, text) {
+  var sheet = getOrCreate(ss, 'Services');
+  var rows = [['Key','Value']];
+  var i = 0;
+  while (i < text.length) {
+    var end = Math.min(i + SERVICES_CHUNK, text.length);
+    // Never split an emoji (or other two-part character) across two cells
+    var code = text.charCodeAt(end - 1);
+    if (end < text.length && code >= 0xD800 && code <= 0xDBFF) end--;
+    rows.push(['DATA', (i ? '~' : '') + text.slice(i, end)]);
+    i = end;
+  }
+  // One write that also blanks any leftover pieces (at least SERVICES_MIN_ROWS
+  // rows), so FieldPro saving at the same moment can't leave a stale piece behind.
+  var n = Math.max(rows.length, sheet.getLastRow(), SERVICES_MIN_ROWS);
+  while (rows.length < n) rows.push(['','']);
+  sheet.getRange(1, 1, n, 2).setValues(rows);
 }
 
 function getProducts(ss) {

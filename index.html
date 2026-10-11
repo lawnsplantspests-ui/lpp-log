@@ -461,6 +461,53 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans)}
 </div>
 <div class="toast" id="toast"></div>
 <script>
+// ── App password ─────────────────────────────────────────────────────────────────────────────
+// The three Google Apps Script backends (FieldPro, LPP Log, SoilTracks) only answer requests that
+// carry the app password, checked on Google's side. It is asked for once per device and kept in
+// this browser; FieldPro and the LPP Log share it (same site). It is never written into this file,
+// because this file is public. Every request to a script.google.com backend gets it added here, so
+// no individual call site has to remember it.
+(function(){
+  var KEY='lpp_app_key';
+  function getKey(){ try{ return localStorage.getItem(KEY)||''; }catch(e){ return ''; } }
+  function ask(msg){
+    if(document.getElementById('appkey-ov')) return;
+    var ov=document.createElement('div'); ov.id='appkey-ov';
+    ov.style.cssText='position:fixed;inset:0;z-index:2147483000;background:rgba(10,14,12,.96);display:flex;align-items:flex-start;justify-content:center;padding-top:16vh;font-family:-apple-system,Segoe UI,Roboto,sans-serif';
+    ov.innerHTML='<form style="width:300px;max-width:88vw;text-align:center;color:#eee">'+
+      '<div style="font-size:20px;font-weight:700;margin-bottom:6px">App password</div>'+
+      '<div id="appkey-msg" style="font-size:13px;opacity:.8;margin-bottom:18px"></div>'+
+      '<input type="password" autocomplete="current-password" style="width:100%;box-sizing:border-box;padding:14px;font-size:18px;border-radius:10px;border:1px solid #555;background:#1b211d;color:#fff;margin-bottom:12px">'+
+      '<button style="width:100%;padding:14px;font-size:16px;font-weight:700;border:0;border-radius:10px;background:#3fa34d;color:#fff">Unlock</button></form>';
+    (document.body||document.documentElement).appendChild(ov);
+    ov.querySelector('#appkey-msg').textContent=msg||'Enter it once — this device will remember it.';
+    var f=ov.querySelector('form'), i=ov.querySelector('input'); setTimeout(function(){ i.focus(); },50);
+    f.onsubmit=function(e){ e.preventDefault(); var v=i.value.trim(); if(!v) return; try{ localStorage.setItem(KEY,v); }catch(_){} location.reload(); };
+  }
+  window.appKey=getKey; window.appKeyAsk=ask;
+  var GAS=/^https:\/\/script\.google\.com\/macros\//;
+  var realFetch=window.fetch.bind(window);
+  window.fetch=function(input,init){
+    var url=typeof input==='string'?input:(input&&input.url)||'';
+    if(!GAS.test(url)) return realFetch(input,init);
+    var k=getKey();
+    if(init&&typeof init.body==='string'){
+      try{ var b=JSON.parse(init.body); if(b&&typeof b==='object'&&!Array.isArray(b)){ b.key=k; init=Object.assign({},init,{body:JSON.stringify(b)}); } }catch(e){}
+    } else if(!init||!init.method||String(init.method).toUpperCase()==='GET'){
+      input=url+(url.indexOf('?')<0?'?':'&')+'key='+encodeURIComponent(k);
+    }
+    return realFetch(input,init).then(function(res){
+      res.clone().text().then(function(t){
+        if(/"unauthorized"/.test(t)){ try{ localStorage.removeItem(KEY); }catch(e){} ask('That password didn’t work. Enter it again.'); }
+      }).catch(function(){});
+      return res;
+    });
+  };
+  function boot(){ if(!getKey()) ask(); }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',boot); else boot();
+})();
+</script>
+<script>
 // SYNC_URL removed: it answered {"status":"ok"} to any request and was
 // called with mode:'no-cors', so it could not report a real failure.
 var API_URL='https://script.google.com/macros/s/AKfycbxl5cWjUIxRvfbw3YBi9rKk_Q5bljH94ZvW3KqTxfNor8QCOb7w_QrjUMJpND8Bz4zA/exec';
@@ -2276,6 +2323,10 @@ function updateSq(i,el){var val=el.value.trim();queue[i].sqFt=val;var ci=custDB.
 function removeEntry(i){queue.splice(i,1);saveQ();renderLog();}
 function archiveDay(){
   if(!queue.length){toast('No entries to archive');return;}
+  // Entries not yet in the sheet are NOT archived: archiving clears today's list, and an entry that
+  // never reached the sheet would then only exist on this device. Send them first; archive after.
+  var unsynced=queue.filter(function(e){return !e.synced;}).length;
+  if(unsynced){ retryPending(true); toast('⚠ '+unsynced+' entr'+(unsynced===1?'y isn’t':'ies aren’t')+' in the sheet yet — sending now. Archive once they show synced.'); return; }
   var today=document.getElementById('aDate').textContent;
   var ex=archive.findIndex(function(a){return a.date===today;});
   if(ex>=0) archive[ex].entries=archive[ex].entries.concat(queue);
@@ -2283,12 +2334,6 @@ function archiveDay(){
   var cutoff=new Date();cutoff.setFullYear(cutoff.getFullYear()-3);
   archive=archive.filter(function(a){var p=a.date.split('/');return new Date(p[2],p[0]-1,p[1])>=cutoff;});
   saveA();
-  // Sync any unsynced entries to Sheets
-  queue.forEach(function(entry){
-    if(!entry.synced){
-      api({action:'appendLog',tab:getTab(),row:eRow(entry),headers:HEADERS},null,null);
-    }
-  });
   queue=[];saveQ();renderLog();renderArchive();renderTotals();
   toast('✓ '+today+' archived permanently');
 }

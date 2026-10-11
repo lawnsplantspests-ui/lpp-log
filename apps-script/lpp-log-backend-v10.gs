@@ -244,7 +244,28 @@ function doPost(e) {
       if (data.headers && data.headers.length > sheet.getLastColumn()) {
         sheet.getRange(1,1,1,data.headers.length).setValues([data.headers]);
       }
-      sheet.appendRow(data.row);
+      // A resend after a lost reply must not double a row in the legal log: the app sends the
+      // entry's own ID (last column, "Entry ID"), and a row already carrying it is not appended
+      // again. The lock stops two copies arriving at once from both getting through.
+      var eid = data.entryId ? String(data.entryId) : '';
+      var lock = LockService.getScriptLock();
+      lock.waitLock(20000);
+      try {
+        if (eid && sheet.getLastRow() > 1) {
+          var hdr = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getDisplayValues()[0];
+          var col = hdr.indexOf('Entry ID');
+          if (col >= 0) {
+            var ids = sheet.getRange(2, col + 1, sheet.getLastRow() - 1, 1).getDisplayValues();
+            for (var k = 0; k < ids.length; k++) {
+              if (ids[k][0] === eid) return json({ status:'ok', duplicate:true });
+            }
+          }
+        }
+        sheet.appendRow(data.row);
+        SpreadsheetApp.flush();
+      } finally {
+        lock.releaseLock();
+      }
       return json({ status:'ok' });
     }
 

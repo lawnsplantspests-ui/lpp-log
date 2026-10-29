@@ -2052,7 +2052,7 @@ function custAddress(name){
   return addrByName[String(name).trim().toLowerCase()]||'';
 }
 // Subcontract customers carry the site after a colon, e.g.
-// "Daniel J Reed Landscaping:1122 Trail Rd." - better than a blank field.
+// "Example Landscaping:12 Example Rd" - better than a blank field.
 function nameSite(name){
   var i=String(name||'').indexOf(':');
   if(i<0) return '';

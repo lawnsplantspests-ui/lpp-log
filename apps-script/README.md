@@ -26,3 +26,13 @@ The FieldPro backend reads and writes this tab the same way.
 ## Sheet
 
 `1ZLuqBz61IXa5CEQieNQbhTLxH6EJYGmxJiXjeyaswa0`
+
+## Wrong-password limit (2026-10-14)
+
+The backend now limits password guessing: after 50 wrong passwords in an hour
+from anyone, password checks pause for an hour (the app shows "Try again in
+about N minutes"). Phones that have already unlocked with the current password
+keep working during a pause. One device gets 10 wrong tries an hour. The
+remembered devices sit in Script Properties as `KNOWN_DEVICES` (hashed); it is
+safe to delete that property, and changing `APP_KEY` forgets them all anyway.
+Settings are the `PW_…` lines near the top of the script.

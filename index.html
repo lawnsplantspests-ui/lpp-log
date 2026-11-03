@@ -658,7 +658,7 @@ function loadAll() {
         productLib = sortLib(JSON.parse(localStorage.getItem('pda_lib_cache') || '[]'));
       }
       buildDD(); renderCusts(); renderProds(); renderLibProducts(); populateLibDDs();
-      applyDeepLink();
+      applyDeepLink(); restoreDraft();
       // Always restore from Sheets to get latest entries
       // (merges new entries, skips duplicates)
       loadAddresses();
@@ -673,7 +673,7 @@ function loadAll() {
       console.warn('loadAll failed:', err);
       if (!SV || !Object.keys(SV).length) SV = JSON.parse(JSON.stringify(DEFAULT_SV));
       buildDD(); renderCusts(); renderProds();
-      applyDeepLink();
+      applyDeepLink(); restoreDraft();
       setSUI('err','offline — cached');
       var bar = document.getElementById('offlineBar');
       if (bar) bar.style.display = 'block';
@@ -891,7 +891,7 @@ function blanket24DCount(cust){
 }
 
 // Fetch a specific month tab from Sheets and merge into archive
-var APP_BUILD = '2026-10-14-a';
+var APP_BUILD = '2026-11-02-a';
 (function(){ setTimeout(function(){ var v=document.getElementById('appVer'); if(v) v.textContent='v'+APP_BUILD; }, 0); })();
 // Is a newer copy of this page on the server than the one this phone is running? Checked on open, when the app comes back to the front, and every 20 minutes.
 function checkForUpdate(){
@@ -1878,12 +1878,15 @@ function setSel(id,val){
 }
 
 function buildDD(){
-  var cs=document.getElementById('cSel'); while(cs.options.length)cs.remove(0);
+  var cs=document.getElementById('cSel'), keepC=cs.value, keepS=document.getElementById('sSel').value; while(cs.options.length)cs.remove(0);
   var b=document.createElement('option');b.value='';b.textContent='— Select customer —';cs.appendChild(b);
   custDB.slice().sort(function(a,b){return a.name.localeCompare(b.name);}).forEach(function(c){var o=document.createElement('option');o.value=o.textContent=c.name;cs.appendChild(o);});
   var ss=document.getElementById('sSel'); while(ss.options.length)ss.remove(0);
   var b2=document.createElement('option');b2.value='';b2.textContent='— Select service —';ss.appendChild(b2);
   Object.keys(SV).sort(function(a,b){return a.localeCompare(b);}).forEach(function(s){var o=document.createElement('option');o.value=o.textContent=s;ss.appendChild(o);});
+  // a rebuild (Refresh, a customer added or renamed) keeps what is picked on the Entry tab
+  if(keepC && custDB.some(function(c){ return c.name === keepC; })) cs.value=keepC;
+  if(keepS && SV[keepS]) ss.value=keepS;
 }
 // ── JOB TIMER ─────────────────────────────────────────────────────
 // Start when you pull in, Done when you leave. Kept on this phone (today only) so it survives closing the app.
@@ -1971,6 +1974,85 @@ function renderJob(){
 }
 setInterval(renderJob, 30000);
 document.addEventListener('input', function(ev){ if(ev.target && ev.target.id === 'siteAddrIn'){ renderJob(); clock(); } });
+// ── ENTRY IN PROGRESS ─────────────────────────────────────────────
+// Devon (Nov 2 2026): pick the customer and service, Start the timer, leave the app - and coming back the customer and
+// service are blank. The phone reloads a page left in the background, and a FieldPro link drops its ?c=... once read.
+// So the Entry tab is kept on this phone as it is filled in and put back when the page opens again (same day, into an
+// empty form). Add to Today's Log, or clearing both the customer and the service, throws it away.
+var DRAFT_KEY = 'pda_entry_draft';
+var DRAFT_IDS = ['sqLawn','sqPHC','sqPest','sqAquatic','spotSqIn','galIn','onetimeSqIn','nts','siteOv'];
+var DRAFT_WX = ['wxC','wxT','wxW'];
+var draftReady = false;   // nothing is saved until the last draft has had its chance to come back
+function dbhRowsRaw(){
+  var out = [];
+  document.querySelectorAll('#dbhRows .dbh-row').forEach(function(r){
+    out.push({c:r.querySelector('.dbhc').value, d:r.querySelector('.dbhd').value, l:r.querySelector('.dbhl').value});
+  });
+  return out.filter(function(x){ return x.c || x.d || x.l; });
+}
+function saveDraft(){
+  if(!draftReady) return;
+  try {
+    var c = document.getElementById('cSel').value, s = document.getElementById('sSel').value;
+    if(!c && !s){ localStorage.removeItem(DRAFT_KEY); return; }
+    var v = {};
+    DRAFT_IDS.concat(DRAFT_WX).forEach(function(id){ var el = document.getElementById(id); if(el && el.value !== '') v[id] = el.value; });
+    var di = document.getElementById('appDateIn'), ti = document.getElementById('appTimeIn');
+    localStorage.setItem(DRAFT_KEY, JSON.stringify({
+      t:Date.now(), c:c, s:s, v:v, spray:sprayMode, dbh:dbhRowsRaw(), swap:prodSwap, amt:amtOverride, man:manualAmt,
+      addr:(siteAddrEdited ? enteredSiteAddress() : ''), when:(appWhenEdited && di && ti ? [di.value, ti.value] : null)
+    }));
+  } catch(e){}
+}
+function loadDraft(){
+  try {
+    var d = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null');
+    if(d && d.t && new Date(d.t).toDateString() === new Date().toDateString()) return d;
+  } catch(e){}
+  return null;
+}
+// Once per page load, after the dropdowns are built (and after a FieldPro link has picked its customer and service:
+// the link wins, and the rest of the draft comes back only when it is the same customer and service).
+function restoreDraft(){
+  if(draftReady) return;
+  draftReady = true;
+  var d = loadDraft();
+  if(!d){ try{ localStorage.removeItem(DRAFT_KEY); }catch(e){} return; }
+  try {
+    var cs = document.getElementById('cSel'), ss = document.getElementById('sSel');
+    var has = function(sel, v){ for(var i = 0; i < sel.options.length; i++){ if(sel.options[i].value === v) return true; } return false; };
+    if(cs.value || ss.value){
+      if(cs.value !== d.c || ss.value !== d.s){ saveDraft(); return; }
+    } else {
+      if(d.c && has(cs, d.c)){ cs.value = d.c; onCust(); }
+      if(d.s && has(ss, d.s)){ ss.value = d.s; onSvc(); }
+      if(!cs.value && !ss.value) return;
+    }
+    if(ss.value === d.s){ prodSwap = d.swap || {}; amtOverride = d.amt || {}; manualAmt = d.man || {}; syncMeasureBoxes(); }
+    var v = d.v || {};
+    DRAFT_IDS.forEach(function(id){ var el = document.getElementById(id); if(el && v[id] != null) el.value = v[id]; });
+    DRAFT_WX.forEach(function(id){ var el = document.getElementById(id); if(el && !el.value && v[id] != null) el.value = v[id]; });   // GPS weather wins
+    if(d.addr && cs.value === d.c){ document.getElementById('siteAddrIn').value = d.addr; siteAddrEdited = true; showCustAddr(true); }
+    if(d.dbh && d.dbh.length && document.getElementById('dbhFld').style.display !== 'none'){
+      var box = document.getElementById('dbhRows');
+      box.innerHTML = d.dbh.map(dbhRowHtml).join('');
+      box.querySelectorAll('.dbh-row').forEach(function(r, i){ r.querySelector('.dbhc').value = d.dbh[i].c || ''; r.querySelector('.dbhd').value = d.dbh[i].d || ''; r.querySelector('.dbhl').value = d.dbh[i].l || ''; });
+      syncDbhRows();
+    }
+    if((d.spray === 'spot' || d.spray === 'full') && document.getElementById('sprayToggle').style.display !== 'none') setSprayMode(d.spray);
+    if(d.when && d.when[0] && d.when[1]){ document.getElementById('appDateIn').value = d.when[0]; document.getElementById('appTimeIn').value = d.when[1]; appWhenEdited = true; }
+    var mr = document.getElementById('manualAmtRows'); if(mr) mr.dataset.sig = '';   // redraw the typed amounts
+    updateTotalsPreview(); updateCapNote(); clock(); renderJob();
+    toast('↩ Picked up where you left off: ' + d.c + (d.s ? ' - ' + d.s.replace(/^Lawn Care - /, '') : ''));
+  } catch(e){ console.warn('draft restore failed:', e); }
+}
+(function(){
+  var later = function(){ setTimeout(saveDraft, 0); };   // after the field's own handler has run
+  var pg = document.getElementById('pg-new');
+  if(pg){ pg.addEventListener('input', later); pg.addEventListener('change', later); pg.addEventListener('click', later); }
+  document.addEventListener('visibilitychange', function(){ if(document.visibilityState === 'hidden') saveDraft(); });
+  window.addEventListener('pagehide', saveDraft);
+})();
 // ── Date applied & time completed ───────────────────────────────────────────────────────
 // 7 Pa. Code 128.35(a)(1): the record carries the date of application and, for a product with a
 // re-entry time, the hour the application was COMPLETED. Both used to be stamped from the clock at
@@ -2383,7 +2465,7 @@ function addEntry(){var cust=document.getElementById('cSel').value;var svc=docum
     toast('⚠ Over the '+CAP_PER_YEAR+'-per-year blanket 2,4-D cap for this site');
   }
   var tu=totals.some(Boolean)?totals.map(function(t){return t||'—';}).join(' + '):'';
-  var mixed=eff.map(function(p,pi){var m=calcMixed(p.rate,svcSq[pi]);var gl0=currentGallons();if(!m&&gl0&&/record gal/i.test(p.totalMixed||''))m=fmtAmt(parseFloat(gl0),parseFloat(gl0),'gal',' spray mix');return m;}).filter(Boolean);var entry={id:Date.now(),customer:cust,service:svc,date:when.toLocaleDateString('en-US',{month:'2-digit',day:'2-digit',year:'numeric'}),time:fmtClock(when.getTime()),sqFt:sqFt,spotSqFt:spotSqFt,totalUsed:tu,weather:document.getElementById('wxC').value,temp:wxTemp?(wxTemp+'°F'):'',wind:document.getElementById('wxW').value,product:combined.product,activeIng:combined.activeIng,epa:combined.epa,rate:combined.rate,totalMixed:(mixed.length?mixed.join(' + '):combined.totalMixed),method:combined.method,targetPest:combined.targetPest,appSite:appSite,dbhIn:dbhIn||'',jobStart:jobTimes(cust,curSite(cust)).s,jobEnd:jobTimes(cust,curSite(cust)).e,siteAddress:(enteredSiteAddress()||siteAddressFor(cust)),notes:(function(){var n=userN?d.notes+' | '+userN:d.notes; var gl=currentGallons(); if(gl) n+=' | Gallons sprayed: '+gl; if(!dbhIn) return n; var rd=dbhRowsDetail(), cnt=rd.reduce(function(a,x){return a+x.c;},0), lab=rd.some(function(x){return x.label;}); return n+' | DBH treated: '+dbhIn+' in'+((cnt>1||lab)?' ('+cnt+(cnt===1?' tree: ':' trees: ')+rd.map(function(x){ return (x.c>1?x.c+' x '+x.d:String(x.d))+(x.label?' '+x.label:''); }).join(' + ')+')':'');})(),synced:false};queue.push(entry);saveQ();jobUsed(cust,svc,entry.siteAddress);renderLog();syncEntry(entry);clearAmtOverrides();clearProdSwap();clearSiteAddr();appWhenReset();toast('✓ Added to log');document.getElementById('cSel').value='';document.getElementById('sSel').value='';['sqLawn','sqPHC','sqPest','sqAquatic'].forEach(function(id){
+  var mixed=eff.map(function(p,pi){var m=calcMixed(p.rate,svcSq[pi]);var gl0=currentGallons();if(!m&&gl0&&/record gal/i.test(p.totalMixed||''))m=fmtAmt(parseFloat(gl0),parseFloat(gl0),'gal',' spray mix');return m;}).filter(Boolean);var entry={id:Date.now(),customer:cust,service:svc,date:when.toLocaleDateString('en-US',{month:'2-digit',day:'2-digit',year:'numeric'}),time:fmtClock(when.getTime()),sqFt:sqFt,spotSqFt:spotSqFt,totalUsed:tu,weather:document.getElementById('wxC').value,temp:wxTemp?(wxTemp+'°F'):'',wind:document.getElementById('wxW').value,product:combined.product,activeIng:combined.activeIng,epa:combined.epa,rate:combined.rate,totalMixed:(mixed.length?mixed.join(' + '):combined.totalMixed),method:combined.method,targetPest:combined.targetPest,appSite:appSite,dbhIn:dbhIn||'',jobStart:jobTimes(cust,curSite(cust)).s,jobEnd:jobTimes(cust,curSite(cust)).e,siteAddress:(enteredSiteAddress()||siteAddressFor(cust)),notes:(function(){var n=userN?d.notes+' | '+userN:d.notes; var gl=currentGallons(); if(gl) n+=' | Gallons sprayed: '+gl; if(!dbhIn) return n; var rd=dbhRowsDetail(), cnt=rd.reduce(function(a,x){return a+x.c;},0), lab=rd.some(function(x){return x.label;}); return n+' | DBH treated: '+dbhIn+' in'+((cnt>1||lab)?' ('+cnt+(cnt===1?' tree: ':' trees: ')+rd.map(function(x){ return (x.c>1?x.c+' x '+x.d:String(x.d))+(x.label?' '+x.label:''); }).join(' + ')+')':'');})(),synced:false};queue.push(entry);saveQ();jobUsed(cust,svc,entry.siteAddress);renderLog();syncEntry(entry);clearAmtOverrides();clearProdSwap();clearSiteAddr();appWhenReset();toast('✓ Added to log');try{localStorage.removeItem(DRAFT_KEY);}catch(e){}document.getElementById('cSel').value='';document.getElementById('sSel').value='';['sqLawn','sqPHC','sqPest','sqAquatic'].forEach(function(id){
     var el=document.getElementById(id);
     if(el){el.value='';el.style.cssText='';}
   });

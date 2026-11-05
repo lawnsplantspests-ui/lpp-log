@@ -431,7 +431,7 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans)}
 <div class="pg" id="pg-lbls"><div class="body">
   <div id="lblActions" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
     <div class="tot-sec" style="margin:0">Product Labels</div>
-    <button class="btn-sm" onclick="window.print()" style="color:var(--grn);border-color:var(--gdim)">Print checklist</button>
+    <div style="display:flex;gap:6px"><button class="btn-sm" onclick="lblPrintChecklist()" style="color:var(--grn);border-color:var(--gdim)">Print checklist</button><button class="btn-sm" id="lblShareBtn" onclick="lblSharePdf()" style="color:var(--grn);border-color:var(--gdim)" disabled>Share PDF</button></div>
   </div>
   <div class="lbl-note">Every product used in the app, with a link to its official EPA label.
   Open each one and print it for the PA Dept of Ag file. Anything marked NEEDS EPA # has no
@@ -4027,10 +4027,7 @@ function renderLabels(){
   var qEl=document.getElementById('lblQ');
   var q=(qEl?qEl.value:'').trim().toLowerCase();
   var all=collectLabelProducts();
-  var rows=all.filter(function(r){
-    if(!q) return true;
-    return (r.product+' '+r.activeIng+' '+r.epa).toLowerCase().indexOf(q)>=0;
-  });
+  var rows=lblFilter(all,q);
   var linked=0, need=0;
   var html=rows.map(function(r){
     var url=epaLabelUrl(r.epa);
@@ -4057,6 +4054,84 @@ function renderLabels(){
   var sum=document.getElementById('lblSummary');
   if(sum) sum.textContent=rows.length+' of '+all.length+' products shown - '
     +linked+' with an EPA label link'+(need?', '+need+' still need a registration number':'');
+  lblPdfSoon();
+}
+function lblFilter(all,q){
+  return all.filter(function(r){
+    if(!q) return true;
+    return (r.product+' '+r.activeIng+' '+r.epa).toLowerCase().indexOf(q)>=0;
+  });
+}
+
+// ── Print / share the label checklist ──
+// window.print() on the whole app does nothing in the iPhone home-screen app, so Print opens the checklist
+// as its own page, and Share PDF makes a PDF (EPA links stay clickable) ahead of time so the share sheet
+// opens on tap. Same approach as SoilTracks' reports.
+function lblChecklistHtml(){
+  var qEl=document.getElementById('lblQ'),q=(qEl?qEl.value:'').trim().toLowerCase();
+  var all=collectLabelProducts(),rows=lblFilter(all,q);
+  var today=new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'});
+  var h='<div data-lbl-doc style="background:#fff;color:#111;font-family:-apple-system,Segoe UI,Roboto,sans-serif;padding:24px;width:100%;box-sizing:border-box">'
+    +'<div style="display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #2d5a1b;padding-bottom:8px;margin-bottom:10px">'
+    +'<div><div style="font-size:18px;font-weight:800;color:#2d5a1b">Lawns Plants &amp; Pests LLC</div><div style="font-size:12px;color:#555">Product label checklist for the PA Dept of Agriculture file</div></div>'
+    +'<div style="font-size:11px;color:#555;text-align:right">'+lblEsc(today)+'<br>'+rows.length+' of '+all.length+' products'+(q?' (search: '+lblEsc(q)+')':'')+'</div></div>';
+  rows.forEach(function(r){
+    var url=epaLabelUrl(r.epa);
+    var exempt=/^n\/a/i.test(r.epa)||/fertilizer only|soil amendment|biological|bacteria/i.test(r.activeIng);
+    var right=url?'<a href="'+lblEsc(url)+'" style="color:#1a5fb4">EPA label</a>':(exempt?'<span style="color:#777">No label required</span>':'<span style="color:#b45309;font-weight:700">NEEDS EPA #</span>');
+    h+='<div style="border-bottom:1px solid #ccc;padding:6px 0;page-break-inside:avoid;break-inside:avoid">'
+      +'<div style="display:flex;justify-content:space-between;gap:10px"><div style="font-size:13px;font-weight:700">&#9744; '+lblEsc(r.product)+'</div><div style="font-size:11px;white-space:nowrap">'+right+'</div></div>'
+      +(r.activeIng?'<div style="font-size:11px;color:#444">'+lblEsc(r.activeIng)+'</div>':'')
+      +'<div style="font-size:11px;color:#2d5a1b;font-family:Menlo,monospace">EPA Reg #: '+lblEsc(r.epa||'(none on record)')+'</div>'
+      +(url?'<div style="font-size:8px;color:#555;word-break:break-all">'+lblEsc(url)+'</div>':'')
+      +(r.uses.length?'<div style="font-size:10px;color:#666">Used by: '+lblEsc(r.uses.join(' | '))+'</div>':'')
+      +'</div>';
+  });
+  return h+'</div>';
+}
+function lblPrintChecklist(){
+  var w=window.open('','_blank');if(!w){toast('Allow pop-ups to print');return;}
+  w.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>LPP product label checklist</title>'
+    +'<style>@page{margin:12mm}body{margin:0;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}</style></head><body>'
+    +lblChecklistHtml()+'<script>window.onload=function(){setTimeout(function(){window.print();},400);};<\/script></body></html>');
+  w.document.close();
+}
+var lblPdf={key:null,blob:null,busy:false},lblPdfTimer=null;
+function lblPdfFile(){return 'LPP product label checklist '+new Date().toISOString().slice(0,10)+'.pdf';}
+function lblLoadHtml2pdf(){
+  if(window.html2pdf)return Promise.resolve();
+  return new Promise(function(res,rej){var s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';s.onload=res;s.onerror=function(){rej(new Error('could not load the PDF maker (no internet?)'));};document.head.appendChild(s);});
+}
+// the list re-renders on every keystroke in the search box: make the PDF once typing stops
+function lblPdfSoon(){
+  var btn=document.getElementById('lblShareBtn');if(!btn)return;
+  clearTimeout(lblPdfTimer);lblPdf={key:null,blob:null,busy:true};btn.disabled=true;btn.textContent='Making PDF...';
+  lblPdfTimer=setTimeout(lblPrepPdf,900);
+}
+function lblPrepPdf(){
+  var key=Date.now(),wrap=null;lblPdf={key:key,blob:null,busy:true};
+  lblLoadHtml2pdf().then(function(){
+    wrap=document.createElement('div');wrap.style.cssText='position:fixed;left:-10000px;top:0;width:760px;background:#fff';wrap.innerHTML=lblChecklistHtml();document.body.appendChild(wrap);
+    return html2pdf().set({margin:[10,10,12,10],filename:lblPdfFile(),image:{type:'jpeg',quality:0.95},html2canvas:{scale:2,backgroundColor:'#ffffff'},jsPDF:{unit:'mm',format:'letter',orientation:'portrait'},pagebreak:{mode:['avoid-all','css']},enableLinks:true}).from(wrap.firstElementChild).outputPdf('blob');
+  }).then(function(blob){
+    if(wrap)wrap.remove();if(lblPdf.key!==key)return;
+    lblPdf.blob=blob;lblPdf.busy=false;var b=document.getElementById('lblShareBtn');if(b){b.disabled=false;b.textContent='Share PDF';}
+  },function(err){
+    if(wrap)wrap.remove();if(lblPdf.key!==key)return;
+    lblPdf.busy=false;var b=document.getElementById('lblShareBtn');if(b){b.disabled=false;b.textContent='Share PDF (try again)';}
+    toast('PDF not made: '+(err&&err.message||err));
+  });
+}
+function lblSharePdf(){
+  if(!lblPdf.blob){if(!lblPdf.busy)lblPrepPdf();return;}
+  var name=lblPdfFile(),file=new File([lblPdf.blob],name,{type:'application/pdf'});
+  if(navigator.canShare&&navigator.canShare({files:[file]})){
+    navigator.share({files:[file],title:name.replace(/\.pdf$/,'')}).catch(function(e){if(!e||e.name!=='AbortError')lblDownloadPdf(name);});
+  }else lblDownloadPdf(name);
+}
+function lblDownloadPdf(name){
+  var a=document.createElement('a');a.href=URL.createObjectURL(lblPdf.blob);a.download=name;document.body.appendChild(a);a.click();
+  setTimeout(function(){URL.revokeObjectURL(a.href);a.remove();},4000);
 }
 function goTab(t){document.querySelectorAll('.tab').forEach(function(x){x.classList.remove('on');});document.querySelectorAll('.pg').forEach(function(x){x.classList.remove('on');});document.getElementById('tab-'+t).classList.add('on');document.getElementById('pg-'+t).classList.add('on');window.scrollTo(0,0);}
 function toast(msg){var t=document.getElementById('toast');t.textContent=msg;t.className='toast show';setTimeout(function(){t.className='toast';},3000);}
